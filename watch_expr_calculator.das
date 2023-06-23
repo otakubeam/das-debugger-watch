@@ -1,6 +1,5 @@
-options debugger
-require daslib/debug
-require strings_boost public
+require strings public
+require daslib/match public
 
 
 struct Position
@@ -8,12 +7,16 @@ struct Position
     column: int
 
 
-enum Token 
-    plus
-    minus
-    slash
-    star
+variant Token
+    plus: void
+    minus: void
 
+    star: void
+    slash: void
+
+    num: int
+    name: string
+    
 
 struct CalcParser
     // Array of input charachters
@@ -26,10 +29,6 @@ struct CalcParser
     pos: Position
 
 
-struct AstNode
-    pos: Position
-    contents: AstContents
-
 
 variant AstContents
     add: tuple<AstNode?; AstNode?>
@@ -41,9 +40,19 @@ variant AstContents
     literal: LiteralNode
 
 
+struct AstNode
+    pos: Position
+    contents: AstContents
+
+
+
 variant LiteralNode
-    integer: int
-    str: string
+    tok: Token
+
+
+
+def consume_next_char(var parser: CalcParser)
+    parser.index =+ 1
 
 
 // Precondition: the index at position must be a digit
@@ -51,7 +60,7 @@ def lex_number(var parser: CalcParser): int
     var char = parser |> peek_next_char()
     var result = 0
 
-    while char |> is_digit()
+    while char |> is_number()
         result *= 10
         result += char
 
@@ -67,11 +76,12 @@ def peek_next_char(var parser: CalcParser): int
 
 
 def position_move_right(var parser: CalcParser)
-    parser.index =+ 1
-    parser.pos.col += 1
+    parser |> consume_next_char()
+    parser.pos.column += 1
 
 
 def position_move_line(var parser: CalcParser)
+    parser |> consume_next_char()
     parser.pos.row += 1
 
 
@@ -80,73 +90,78 @@ def get_current_token(var parser: CalcParser): Token
 
         var ch = parser |> peek_next_char()
 
-        match ch
-            if ch == '\n'
-                parser |> position_move_line()
+        if is_new_line(ch)
+            parser |> position_move_line()
+        elif is_white_space(ch) // ' ' & '\t'
+            parser |> position_move_right()
 
-            if is_whitespace(ch) // ' ' & '\t'
-                parser |> position_move_right()
+        if ch == '-'
+            return [[Token minus = void]]
+        // if ch == '+'
+        //     return [[Token plus]]
+        // if ch == '*'
+        //     return [[Token star]]
+        // if ch == '/'
+        //     return [[Token slash]]
 
-            if ch == '-'
-                return [[Token minus]]
-            if ch == '+'
-                return [[Token plus]]
-            if ch == '*'
-                return [[Token star]]
-            if ch == '/'
-                return [[Token slash]]
-
-            if _
-                if ch |> is_digit()
-                    return [[Token ]]
+        if _
+            if ch |> is_number()
+                return [[Token num = lex_number()]]
 
 
-def parse_multiplication(var parser: CalcParser): AstNode?
-    var result : AstNode? // Can I cast nodes and references to each other?
+// def parse_multiplication(var parser: CalcParser): AstNode?
+//     var result : AstNode? // Can I cast nodes and references to each other?
     
-    result = parser |> parse_multiplication()._0
+//     result = parser |> parse_multiplication()
 
-    while true // match while next_token is either + or
-        var token = parser |> get_current_token()
+//     while true // match while next_token is either + or
+//         var token = parser |> get_current_token()
 
-        var right = parser |> parse_multiplication()._0
+//         var right = parser |> parse_multiplication()
         
-        match token
-            if Token plus
-                result = new [[AstNode add [[auto result, right]] ]]
-            if Token minus
-                result = new [[AstNode sub [[auto result, right]] ]]
-            if _
-                break
+//         match token
+//             if _ as plus
+
+//                 result = new [[AstNode add = [[auto result, right]] ]]
+//             if _ as minus
+//                 result = new [[AstNode sub = [[auto result, right]] ]]
+//             if _
+//                 break
     
-    return result
+//     return result
  
 
-def parse_expression(var parser: CalcParser): AstNode?
+// def parse_addition(var parser: CalcParser): AstNode?
+//     var result : AstNode? // Can I cast nodes and references to each other?
 
-    def parse_addition(var parser: CalcParser): AstNode?
-        var result : AstNode? // Can I cast nodes and references to each other?
+//     result = parser |> parse_multiplication()
 
-        result = parser |> parse_multiplication()._0
+//     while true // match while next_token is either + or -
+//         var token = parser |> get_current_token()
 
-        while true // match while next_token is either + or
-            var token = parser |> get_current_token()
-
-            var right = parser |> parse_multiplication()._0
-            
-            match token
-                if Token plus
-                    result = new [[AstNode add [[auto result, right]] ]]
-                if Token minus
-                    result = new [[AstNode sub [[auto result, right]] ]]
-                if _
-                    break
+//         var right = parser |> parse_multiplication()
         
-        return result
+//         match token
+//             if _ as plus
+//                 result = new [[AstNode add = [[auto result, right]] ]]
+//             if _ as minus
+//                 result = new [[AstNode sub = [[auto result, right]] ]]
+//             if _
+//                 break
     
-    return parser |> parse_addition()
+//     return result
+
+
+// def parse_expression(var parser: CalcParser): AstNode?
+//     return parser |> parse_addition()
         
 
 [export]
 def main
-    "Hello world\n" |> print()
+    var parser: CalcParser = [[CalcParser input =  "1234"]]
+
+    let n = parser |> lex_number()
+
+    print("{n}\n")
+
+    return 0
