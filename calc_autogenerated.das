@@ -1,17 +1,16 @@
 require strings
-require daslib/match public
 
 // Grammar
 //
-// start: int -> add 
-// add: int -> add '+' NUM
-//      | primary
+// start:   int -> add 
+// add:     int -> add '+' NUM
+//          | primary
 // primary: int -> NUM | '(' add ')'
-// NUM: int -> '1'
+// NUM:     int -> '1'
 //
 
 struct Parser
-    add_cache: table<int; void?>
+    add_cache: table<int; Result>
 
     input: string
     index: int
@@ -25,66 +24,148 @@ def reset(var parser: Parser; pos: int)
     parser.index = pos
 
 
-def expect(var parser: Parser; template: string): bool
+def matches(var parser: Parser; templat: string): bool
     // skip_whitespace()
 
     with parser
-        var st = input |> chop(0, index)
-        return st |> starts_with(template)
+        var st = input |> slice(index)
+        if !st |> starts_with(templat)
+            return false
+        parser |> move(templat |> length)
+        return true
+
+
+typedef Result = tuple<success:bool; value:int; endpos:int>;
+
+
+def move(var parser: Parser; offset : int) 
+    parser.index += offset
+
+
+def parse_num(var parser: Parser): Result
+    return [[Result]] if !parser |> matches("1")
+        
+    var mark <- parser |> mark()
+
+    return [[auto true, 1, mark]]
+
+    
+def parse_primary(var parser: Parser): Result
+
+    // Alternative 1: NUM
+
+    var mark <- parser |> mark()
+    var res <- parser |> parse_num()
+
+    return res if res.success
+
+    parser |> reset(mark)
+    
+    // Alternative 2: (NUM)
+    
+    print("{parser}\n")
+    
+    var pos_1 <- parser |> mark()
+
+    var blk = $ <| 
+        return [[Result]] if !parser |> matches("(")
+
+        var v1 <- parser |> parse_primary
+        return [[Result]] if !v1.success
         
 
+        return [[Result]] if !parser |> matches(")")
 
-def parse_add(var parser: Parser): int
+        // Here goes action perhaps?
+        return <- v1
+
+    res <- invoke(blk)
+
+    return res if res.success
+
+    parser |> reset(pos_1)
+    
+    // Default
+    
+    return [[Result]]
+ 
+    
+def parse_add(var parser: Parser): Result
+	var mark = parser |> mark()
+    
+    with parser 
+    	if !add_cache |> key_exists(index)
+            return [[Result]]
+            
+        var res = add_cache[index]
+        
+        while true
+            parser |> reset(res.endpos)
+            
+            var newres = parser |> parse_add_inner
+            var endpos = parser |> mark
+            
+            if res.endpos <= endpos
+               	break
+                
+            res = newres
+            add_cache[index] = res
+
+        return res
+            
+    
+def parse_add_inner(var parser: Parser): Result
     with parser
-
-        if false // has index in add_cache
-            return add_cache[index]
-        
-        // Parse the first alternative: add '+' primary
+        // Alternative 1: add '+' primary
 
         var pos_1 <- parser |> mark()
 
         var blk = $ <| 
             var add_1 <- parser |> parse_add
 
-            return null if add_1 == null
-            return null if !paresr |> expect("+")
+            return [[Result]] if !add_1.success
+                
+            return [[Result]] if !parser |> matches("+")
 
             var prim_1 <- parser |> parse_primary
-            return null if prim_1 == null
+            return [[Result]] if !prim_1.success
 
             // Here goes action perhaps?
-            return [[Node add = {add_1, prim_1}]]
+            var val <- add_1.value + prim_1.value
+            return [[Result true, val, 0]]
 
         var res <- invoke(blk)
 
-        if res != null
-            return res
-
+        return res if res.success
+            
         parser |> reset(pos_1)
-
-        // Parse the second alternative: primary
         
-        var pos_1 <- parser |> mark()
+		// Alternative 2: primary
+        
+        pos_1 = parser |> mark()
 
-        var blk = $ <| 
+        var blk2 <- $ <| 
             var prim_1 <- parser |> parse_primary
-            return null if prim_1 == null
+            return [[Result]] if !prim_1.success
 
             // Here goes action perhaps?
-            return [[Node add = {add_1, prim_1}]]
+            return prim_1
 
-        var res <- invoke(blk)
+        res <- invoke(blk2)
 
-        if res != null
-            return res
+        return res if !res.success
 
         parser |> reset(pos_1)
+        
+        // Default
+        
+        return [[Result]]
+
+[export]
+def main
+	var parser <- [[Parser]]
+    parser.input = "(1)"
     
-    return null
-
-
-def parse_primary(var parser: Parser): void?
-
-
-def parse_num(var paresr: Parser): void?
+    var result <- parser |> parse_add_inner
+    
+    print("{parser} => {result}\n")
