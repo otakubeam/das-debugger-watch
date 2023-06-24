@@ -94,10 +94,16 @@ def parse_add(var parser: Parser): Result
 	var mark = parser |> mark()
     
     with parser 
-    	if !add_cache |> key_exists(index)
-            return [[Result]]
+    	if add_cache |> key_exists(index)
+            var result = add_cache[index]
+
+            parser |> reset(result.endpos)
+            return result
             
-        var res = add_cache[index]
+        // Build new cache entry from scratch
+        
+        var res = [[Result endpos = mark]]
+        add_cache[mark] = res
         
         while true
             parser |> reset(res.endpos)
@@ -105,11 +111,11 @@ def parse_add(var parser: Parser): Result
             var newres = parser |> parse_add_inner
             var endpos = parser |> mark
             
-            if res.endpos <= endpos
-               	break
+            // Break if no movement
+            break if res.endpos >= endpos
                 
             res = newres
-            add_cache[index] = res
+            add_cache[mark] = res
 
         return res
             
