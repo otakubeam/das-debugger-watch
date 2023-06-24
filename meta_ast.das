@@ -1,3 +1,5 @@
+require daslib/match
+
 
 struct Grammar
     defs: array<Definition>
@@ -29,7 +31,7 @@ variant Rule
     and: Rule?     // &Rule
 
 
-struct Terminal
+variant Terminal
     // Literal: "Hello world"
     lit: string 
 
@@ -37,4 +39,32 @@ struct Terminal
     range: tuple<int; int> 
 
 
+def expect(terminal: Terminal): bool
+
+    var input: string
+
+    match termainal
+        if [[Terminal lit = .... l    ]]
+
+            var idx = 0
+            var against: array<u8> = input
+        
+            // if !input |> starts_with(l)
+            //     return false
+
+            for letter in l
+                if letter != against[idx]
+                    return false
+                idx += 1
+            
+            input |> chop(            // if !input |> starts_with(l)
+            //     return false0, idx)
+
+        // if [[Terminal range = ...r... ]] 
+
+
+def run 
+    // Do not create grammar for now
+    // Let's start with something simple
+    // Like matching a `terminal` node
 
