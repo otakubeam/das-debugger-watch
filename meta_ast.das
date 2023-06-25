@@ -32,7 +32,7 @@ variant Rule
 
 
 def generate(rule : Rule)
-    print({[]})
+    print("")
 
 
 variant Terminal
@@ -40,10 +40,10 @@ variant Terminal
     lit: string 
 
     // Range: [0-9]
-    range: tuple<int; int> 
+    range_: tuple<int; int> 
 
 
-def expect(terminal: Terminal): bool
+def matches(terminal: Terminal): bool
 
     var input: string
 
@@ -61,7 +61,7 @@ def expect(terminal: Terminal): bool
                     return false
                 idx += 1
             
-            input |> chop(            // if !input |> starts_with(l)
+            input |> chop(0)            // if !input |> starts_with(l)
             //     return false0, idx)
 
         // if [[Terminal range = ...r... ]] 
@@ -71,4 +71,4 @@ def run
     // Do not create grammar for now
     // Let's start with something simple
     // Like matching a `terminal` node
-
+    pass

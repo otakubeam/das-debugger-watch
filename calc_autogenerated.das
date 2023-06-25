@@ -1,4 +1,5 @@
 require strings
+require daslib/json public
 
 // Grammar
 //
@@ -22,16 +23,17 @@ def mark(parser: Parser): int
 
 def reset(var parser: Parser; pos: int)
     parser.index = pos
+    parser
 
 
-def matches(var parser: Parser; templat: string): bool
+def matches(var parser: Parser; template_: string): bool
     // skip_whitespace()
 
     with parser
         var st = input |> slice(index)
-        if !st |> starts_with(templat)
+        if !st |> starts_with(template_)
             return false
-        parser |> move(templat |> length)
+        parser |> move(template_ |> length)
         return true
 
 
