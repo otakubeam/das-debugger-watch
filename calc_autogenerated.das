@@ -44,7 +44,7 @@ def move(var parser: Parser; offset : int)
 
 def parse_num(var parser: Parser): Result
     return [[Result]] if !parser |> matches("1")
-        
+
     var mark <- parser |> mark
 
     return [[auto true, 1, mark]]
@@ -68,7 +68,7 @@ def parse_primary(var parser: Parser): Result
     var blk = $ <| 
         return [[Result]] if !parser |> matches("(")
 
-        var v1 <- parser |> parse_primary
+        var v1 <- parser |> parse_add
         return [[Result]] if !v1.success
         
         return [[Result]] if !parser |> matches(")")
@@ -88,10 +88,10 @@ def parse_primary(var parser: Parser): Result
  
     
 def parse_add(var parser: Parser): Result
-	var mark = parser |> mark
+    var mark = parser |> mark
     
     with parser 
-    	if add_cache |> key_exists(index)
+        if add_cache |> key_exists(index)
             var result = add_cache[index]
 
             parser |> reset(result.endpos)
@@ -101,16 +101,16 @@ def parse_add(var parser: Parser): Result
         
         var res = [[Result]]
         add_cache[mark] = res
-        
+
         while true
             parser |> reset(mark)
-            
+
             var newres = parser |> parse_add_inner
             var endpos = parser |> mark
-            
+
             // Break if no movement
             break if res.endpos >= endpos
-                
+
             res = newres
             add_cache[mark] = res
 
@@ -144,7 +144,7 @@ def parse_add_inner(var parser: Parser): Result
             
         parser |> reset(pos_1)
         
-		// Alternative 2: primary
+        // Alternative 2: primary
         
         pos_1 = parser |> mark
 
@@ -167,7 +167,7 @@ def parse_add_inner(var parser: Parser): Result
 
 [export]
 def main
-	var parser <- [[Parser]]
+    var parser <- [[Parser]]
     parser.input = "1+1+1+1"
     
     var result <- parser |> parse_add
