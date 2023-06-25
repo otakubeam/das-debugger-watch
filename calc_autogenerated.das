@@ -45,7 +45,7 @@ def move(var parser: Parser; offset : int)
 def parse_num(var parser: Parser): Result
     return [[Result]] if !parser |> matches("1")
         
-    var mark <- parser |> mark()
+    var mark <- parser |> mark
 
     return [[auto true, 1, mark]]
 
@@ -54,8 +54,8 @@ def parse_primary(var parser: Parser): Result
 
     // Alternative 1: NUM
 
-    var mark <- parser |> mark()
-    var res <- parser |> parse_num()
+    var mark <- parser |> mark
+    var res <- parser |> parse_num
 
     return res if res.success
 
@@ -63,9 +63,7 @@ def parse_primary(var parser: Parser): Result
     
     // Alternative 2: (NUM)
     
-    print("{parser}\n")
-    
-    var pos_1 <- parser |> mark()
+    var pos_1 <- parser |> mark
 
     var blk = $ <| 
         return [[Result]] if !parser |> matches("(")
@@ -73,11 +71,10 @@ def parse_primary(var parser: Parser): Result
         var v1 <- parser |> parse_primary
         return [[Result]] if !v1.success
         
-
         return [[Result]] if !parser |> matches(")")
 
         // Here goes action perhaps?
-        return <- v1
+        return [[Result true, v1.value, parser |> mark]]
 
     res <- invoke(blk)
 
@@ -91,7 +88,7 @@ def parse_primary(var parser: Parser): Result
  
     
 def parse_add(var parser: Parser): Result
-	var mark = parser |> mark()
+	var mark = parser |> mark
     
     with parser 
     	if add_cache |> key_exists(index)
@@ -99,14 +96,14 @@ def parse_add(var parser: Parser): Result
 
             parser |> reset(result.endpos)
             return result
-            
+
         // Build new cache entry from scratch
         
-        var res = [[Result endpos = mark]]
+        var res = [[Result]]
         add_cache[mark] = res
         
         while true
-            parser |> reset(res.endpos)
+            parser |> reset(mark)
             
             var newres = parser |> parse_add_inner
             var endpos = parser |> mark
@@ -124,11 +121,10 @@ def parse_add_inner(var parser: Parser): Result
     with parser
         // Alternative 1: add '+' primary
 
-        var pos_1 <- parser |> mark()
+        var pos_1 <- parser |> mark
 
         var blk = $ <| 
             var add_1 <- parser |> parse_add
-
             return [[Result]] if !add_1.success
                 
             return [[Result]] if !parser |> matches("+")
@@ -138,7 +134,9 @@ def parse_add_inner(var parser: Parser): Result
 
             // Here goes action perhaps?
             var val <- add_1.value + prim_1.value
-            return [[Result true, val, 0]]
+            
+            var mark <- parser |> mark
+            return [[Result true, val, mark]]
 
         var res <- invoke(blk)
 
@@ -148,7 +146,7 @@ def parse_add_inner(var parser: Parser): Result
         
 		// Alternative 2: primary
         
-        pos_1 = parser |> mark()
+        pos_1 = parser |> mark
 
         var blk2 <- $ <| 
             var prim_1 <- parser |> parse_primary
@@ -159,7 +157,7 @@ def parse_add_inner(var parser: Parser): Result
 
         res <- invoke(blk2)
 
-        return res if !res.success
+        return res if res.success
 
         parser |> reset(pos_1)
         
@@ -170,8 +168,8 @@ def parse_add_inner(var parser: Parser): Result
 [export]
 def main
 	var parser <- [[Parser]]
-    parser.input = "(1)"
+    parser.input = "1+1+1+1"
     
-    var result <- parser |> parse_add_inner
+    var result <- parser |> parse_add
     
     print("{parser} => {result}\n")

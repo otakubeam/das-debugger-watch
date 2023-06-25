@@ -31,6 +31,10 @@ variant Rule
     and: Rule?     // &Rule
 
 
+def generate(rule : Rule)
+    print({[]})
+
+
 variant Terminal
     // Literal: "Hello world"
     lit: string 
