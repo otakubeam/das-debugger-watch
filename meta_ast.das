@@ -31,8 +31,32 @@ variant Rule
     and: Rule?     // &Rule
 
 
+def abort(message: string)
+    print("{}\n")
+    exit(1)
+
+
+def iota
+    var i: int = 0
+    return <- generator<int>() <| $
+        i += 1
+        return false if i == 0
+        yield i
+
+
 def generate(rule : Rule)
-    print("")
+    match rule
+        if [[Rule seq = rules]]
+
+
+        if [[Rule alt = alts]]
+            with alts
+                for alt in alternatives
+
+
+
+        if _
+            abort("TODO: more rules")
 
 
 variant Terminal
@@ -43,28 +67,21 @@ variant Terminal
     range_: tuple<int; int> 
 
 
-def matches(terminal: Terminal): bool
+def generate(terminal: Terminal): bool
 
     var input: string
 
     match termainal
-        if [[Terminal lit = .... l    ]]
+        if [[Terminal lit = l ]]
 
-            var idx = 0
-            var against: array<u8> = input
-        
-            // if !input |> starts_with(l)
-            //     return false
-
-            for letter in l
-                if letter != against[idx]
-                    return false
-                idx += 1
+            var q = qmacro() <| $
+                return [[Result]] if !parser |> matches($v(l))
             
-            input |> chop(0)            // if !input |> starts_with(l)
-            //     return false0, idx)
+            return true
 
-        // if [[Terminal range = ...r... ]] 
+        if [[Terminal range_ = r ]]
+            abort("TODO: ranges")
+
 
 
 def run 
