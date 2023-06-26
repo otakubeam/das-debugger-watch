@@ -99,15 +99,16 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                 let varname = "{name}{count}"
                 let parse_fun = "parse_{name}"
 
-                output |> emplace_new <| qmacro_expr(${
+                output |> emplace_new <|  qmacro_expr(${
                     // Does not work: why?
                     // var $i(varname) <- parser |> $c(parse_fun)
                     let $i(varname) <- $c(parse_fun)(parser);
-                    return [[Result]] if !$i(varname).success;
                 })
 
-                output[-1] |> describe |> print
-
+                output |> emplace_new <|  qmacro_expr(${
+                    return [[Result]] if !$i(varname).success;
+                })
+                
                 
             if [[Rule seq = $v(rules)]]
 
