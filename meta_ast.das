@@ -135,7 +135,7 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                     
                     var t <- qmacro <|
                         // "Alternative {i}: {rule}\n"
-                                    
+                        
                         var parse_pos <- parser |> mark
 
                         var $i(block_name) <- $ <|
@@ -170,13 +170,17 @@ variant Terminal
 typedef Nonterminal = string;
 
 
-def seq_append(var seq: Rule; var new_: Rule): Rule
+def rule_append(var seq: Rule; var new_: Rule): Rule
     match seq
         if [[Rule seq = $v(rules)]]
             // Transform Rule into Rule_
             rules |> push (new [[Rule_ rule <- new_]])
             return <- [[Rule seq <- rules]]
-    
+
+        if [[Rule alt = $v(alts)]]
+            alts |> push (new [[Rule_ rule <- new_]])
+            return <- [[Rule alt <- alts]]
+
     abort("Unreachable")
     return <- seq
 
@@ -207,16 +211,33 @@ def generate(terminal: Terminal): ExpressionPtr
 def main
     var gen <- [[ParserGenerator]]
 
+    // Create first alternative: add '+' mul
+
     var mul <- [[Rule nonterminal = "mul"]]
-    var if_ <- [[Rule terminal <- [[Terminal lit = "if"]]]]
+    var plus <- [[Rule terminal <- [[Terminal lit = "+"]]]]
     var add <- [[Rule nonterminal = "add"]]
 
-    var empty_seq : array<Rule_?>
+    var empty_seq: array<Rule_?>
     var seq <- [[Rule seq <- empty_seq]]
 
-    var n <- seq |> seq_append(mul) |> seq_append(if_) |> seq_append(add)
+    var n <- seq |> rule_append(add) |> rule_append(plus) |> rule_append(mul)
+
+    // Create second alternative: mul
+
+    var simply_mul <- [[Rule nonterminal = "mul"]]
+
+    var empty_seq2: array<Rule_?>
+    var seq2 <- [[Rule seq <- empty_seq2]]
+
+    var n2 <- seq2 |> rule_append(simply_mul)
+
+
+    var empty_alts: array<Rule_?>
+    var alts <- [[Rule alt <- empty_alts]]
+
+    alts <- alts |> rule_append(n) |> rule_append(n2)
 
     print("Rule raw: {n}\n")
 
-    gen |> generate([[Definition name = "add", rule <- n ]])
+    gen |> generate([[Definition name = "parse_add", rule <- alts ]])
 
