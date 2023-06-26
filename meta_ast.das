@@ -89,6 +89,9 @@ def generate(var gen: ParserGenerator; rule_: Rule)
         var output& = gen |> get_output()
 
         match rule_
+            if [[Rule terminal = $v(term)]]
+                output |> emplace_new <| generate(term)
+
 
             if [[Rule nonterminal = $v(nonterm)]]
                 let name = nonterm
@@ -131,8 +134,6 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
                         parser |> reset(parse_pos)
                     
-                    // Turn gen array of AST block pointers to AST block pointer
-
                     output |> emplace_new <| t
             if _
                 abort("TODO: more rules")
@@ -152,6 +153,16 @@ variant Terminal
 
 typedef Nonterminal = string;
 
+
+def seq_append(var seq: Rule; var new_: Rule): Rule
+    match seq
+        if [[Rule seq = $v(rules)]]
+            // Transform Rule into Rule_
+            rules |> push (new [[Rule_ rule <- new_]])
+            return <- [[Rule seq <- rules]]
+    
+    abort("Unreachable")
+    return <- seq
 
 
 def generate(var terminal: Terminal): ExpressionPtr
@@ -185,8 +196,18 @@ def main
 
     var gen <- [[ParserGenerator]]
 
-    gen |> generate([[Definition name = "add", 
-        rule <- [[Rule nonterminal = "mul"]]]])
+    var mul <- [[Rule nonterminal = "mul"]]
+    var if_ <- [[Rule terminal <- [[Terminal lit = "if"]]]]
+    var add <- [[Rule nonterminal = "add"]]
+
+    var empty_seq : array<Rule_?>
+    var seq <- [[Rule seq <- empty_seq]]
+
+    var n <- seq |> seq_append(mul) |> seq_append(if_) |> seq_append(add)
+
+    print("{n}\n")
+
+    gen |> generate([[Definition name = "add", rule <- n ]])
 
     for x,i,_ in  iota(), iota(), range(10)
         print("{x}, {i}\n")
