@@ -4,8 +4,10 @@ require daslib/json public
 // Grammar
 //
 // start:   int -> add 
+// mul:     int -> mul '*' add 
+//                | add
 // add:     int -> add '+' NUM
-//          | primary
+//                | primary
 // primary: int -> NUM | '(' add ')'
 // NUM:     int -> '1'
 //
