@@ -6,29 +6,37 @@ require daslib/ast_boost
 require daslib/templates_boost
 
 
-// variant Rule
-//     seq: array<Rule?>   // R1 R2 R3
-//     alt: array<Rule?>   // R1 | R2 | R3
+// Note on Rule vs. Rule_:
+//  Since variant (like tuple) is a weak type
+//  you cannot reference variant Rule directly in Rule
+//  definition. Thus Rule_ wraps it in a struct, which is strong  
+
+
+variant Rule
+    seq: array<Rule_?>   // R1 R2 R3
+    alt: array<Rule_?>   // R1 | R2 | R3
     
-//     maybe_repeat: Rule? // Rule*
-//     repeat: Rule?       // Rule+
+    maybe_repeat: Rule_? // Rule*
+    repeat: Rule_?       // Rule+
 
-//     option: Rule?       // Rule?
+    option: Rule_?       // Rule?
 
-//     terminal: Terminal 
-//     nonterminal: Nonterminal
+    terminal: Terminal 
+    nonterminal: Nonterminal
 
-//     // Do not consume the input
-//     not: Rule?     // !Rule
-//     and: Rule?     // &Rule
+    // Do not consume the input
+    not_rule: Rule_?     // !Rule
+    and_rule: Rule_?     // &Rule
 
 
+struct Rule_
+    rule: Rule
 
-// // E.g. rule_name: rule
-// struct Definition
-//     name: string
-//     rule: Rule
 
+// E.g. rule_name: rule
+struct Definition
+    name: string
+    rule: Rule
     
 
 def abort(message: string)
@@ -52,74 +60,88 @@ struct ParserGenerator
     rule_counter: table<string; int>
 
     // Currently generating code for 'rule'
+    // For use in actions.
     current_rule: string
 
 
-
-
-
-def generate(var gen: ParserGenerator; gram: Grammar)
-    pass
-
-
-def generate(var gen: ParserGenerator; def: Definition)
-    if gen.gen |> key_exists(def.name)
+def generate(var gen: ParserGenerator; def_: Definition)
+    if gen.output |> key_exists(def_.name)
         abort("Duplicate rule definition")
 
-    gen.output[def.name] <- [{}] // Init empty (needed?)
-    gen.current_rule = def.name
+    // gen.output[def_.name] <- array<ExpressionPtr> // Init empty (needed?)
+    gen.current_rule = def_.name
 
-    gen |> generate(def.rule)
+    gen |> generate(def_.rule)
+
+    var fun <- qmacro_function(def_.name) <| $ (var parser: Parser)
+        $b(gen.output[gen.current_rule])
+
+    fun |> describe |> print
 
 
-def generate(var gen: ParserGenerator; rule: Rule) 
-    var output& = gen.output[current_rule]
+def get_output(var gen: ParserGenerator): array<ExpressionPtr>&
+    unsafe // Returning a ref to a member in the outer scope
+        return gen.output[gen.current_rule]
 
-    match rule
 
-        if [[Rule nonterminal = $v(nonterm)]]
-            let name = nonterm
-            let count = rule_counter[name] |> string()
+def generate(var gen: ParserGenerator; rule_: Rule) 
+    unsafe 
+        var output& = gen |> get_output()
 
-            output |> push <| qmacro_block() <|
-                // $i(name)$i(count) is a generic name for unnamed nonterminals
-                var $i(name)$i(count) <- parser |> parse_$i(name)
-                return [[Result]] if !$i(name)$i(count).success
+        match rule_
 
-            
-        if [[Rule seq = $v(rules)]]
+            if [[Rule nonterminal = $v(nonterm)]]
+                let name = nonterm
+                let count = gen.rule_counter[name] |> string()
 
-            for rule, i in rules, iota()
-                generate(output, rule?)
+                // varname is a generic name for unnamed nonterminals
+                // e.g. add4, add5, mul0
+                let varname = "{name}{count}"
+                let parse_fun = "parse_{name}"
 
-        if [[Rule alt = $v(alts)]]
+                output |> emplace_new <| qmacro_expr(${
+                    // Does not work: why?
+                    // var $i(varname) <- parser |> $c(parse_fun)
+                    let $i(varname) <- $c(parse_fun)(parser);
+                    return [[Result]] if !$i(varname).success;
+                })
 
-            var gen: array<ExpressionPtr> 
+                output[-1] |> describe |> print
 
-            for alt, i in alts.alternatives, iota()
-                var block_name = "blk" + string(i)
-                var parse_pos = "pos" + string(i)
-                var result = "res" + string(i)
-
-                gen |> push <| qmacro_block() <|
-                    // "Alternative {i}: {rule}\n"
-                                
-                    parser |> reset(mark)
-                    var parse_pos <- parser |> mark
-
-                    var $i(block_name) <- $ <|
-                        generate(alt?)         // Here I should expand the result somehow
-                    
-                    var $i(result) <- $i(block_name) |> invoke()
-
-                    return $i(result) if $i(result).success
-
-                    parser |> reset(parse_pos)
                 
-                // Turn gen array of AST block pointers to AST block pointer
+            if [[Rule seq = $v(rules)]]
 
-        if _
-            abort("TODO: more rules")
+                for rule, i in rules, iota()
+                    gen |> generate(rule.rule)
+
+            // if [[Rule alt = $v(alts)]] 
+
+            //     for alt, i in alts.alternatives, iota()
+            //         let block_name = "blk{i}"
+            //         let parse_pos = "pos{i}"
+            //         let result  = "res{i}"
+
+            //         output |> push <| qmacro_block() <| $
+            //             // "Alternative {i}: {rule}\n"
+                                    
+            //             var parse_pos <- parser |> mark
+
+            //             var $i(block_name) <- $ <|
+            //                 generate(*alt)       
+
+            //             var $i(result) <- $i(block_name) |> invoke()
+
+            //             return $i(result) if $i(result).success
+
+            //             parser |> reset(parse_pos)
+                    
+            //         // Turn gen array of AST block pointers to AST block pointer
+
+            if _
+                abort("TODO: more rules")
+
+        return
+
 
 
 variant Terminal
@@ -162,6 +184,12 @@ def main
     print("\n")
     
     generate([[Terminal lit = "123"]]) |> describe() |> print()
-    
+
+
+    var gen <- [[ParserGenerator]]
+
+    gen |> generate([[Definition name = "add", 
+        rule <- [[Rule nonterminal = "mul"]]]])
+
     for x,i,_ in  iota(), iota(), range(10)
         print("{x}, {i}\n")
