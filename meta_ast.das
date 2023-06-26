@@ -99,16 +99,11 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                 let varname = "{name}{count}"
                 let parse_fun = "parse_{name}"
 
-                output |> emplace_new <|  qmacro_expr(${
-                    // Does not work: why?
-                    // var $i(varname) <- parser |> $c(parse_fun)
-                    let $i(varname) <- $c(parse_fun)(parser);
-                })
+                var t <- qmacro <| $
+                    let $i(varname) <- $c(parse_fun)(parser)
+                    return [[Result]] if !$i(varname).success
 
-                output |> emplace_new <|  qmacro_expr(${
-                    return [[Result]] if !$i(varname).success;
-                })
-                
+                output |> emplace_new <| t
                 
             if [[Rule seq = $v(rules)]]
 
@@ -117,12 +112,12 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
             if [[Rule alt = $v(alts)]] 
 
-                for alt, i in alts.alternatives, iota()
+                for alt, i in alts, iota()
                     let block_name = "blk{i}"
                     let parse_pos = "pos{i}"
                     let result  = "res{i}"
 
-                    output |> emplace_new <| qmacro() <| $
+                    var t <- qmacro <| $
                         // "Alternative {i}: {rule}\n"
                                     
                         var parse_pos <- parser |> mark
@@ -138,6 +133,7 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                     
                     // Turn gen array of AST block pointers to AST block pointer
 
+                    output |> emplace_new <| t
             if _
                 abort("TODO: more rules")
 
