@@ -6,37 +6,30 @@ require daslib/ast_boost
 require daslib/templates_boost
 
 
-struct Grammar
-    defs: array<Definition>
-
-
-// E.g. rule_name: rule
-struct Definition
-    name: string
-    alts: array<Alternative> // Here trying to build the grammar into data strucutres (it doesn't work like this)
-
-
-struct Alternative
-    alternatives: array<Rule?>
-     
-
-variant Rule
-    seq: array<Rule?>   // R1 R2
-    alt: Alternative    // R1 | R2
+// variant Rule
+//     seq: array<Rule?>   // R1 R2 R3
+//     alt: array<Rule?>   // R1 | R2 | R3
     
-    maybe_repeat: Rule? // Rule*
-    repeat: Rule?       // Rule+
+//     maybe_repeat: Rule? // Rule*
+//     repeat: Rule?       // Rule+
 
-    option: Rule?       // Rule?
+//     option: Rule?       // Rule?
 
-    nonterminal: string
-    terminal: Terminal 
+//     terminal: Terminal 
+//     nonterminal: Nonterminal
 
-    // Do not consume the input
-    not: Rule?     // !Rule
-    and: Rule?     // &Rule
+//     // Do not consume the input
+//     not: Rule?     // !Rule
+//     and: Rule?     // &Rule
 
-            
+
+
+// // E.g. rule_name: rule
+// struct Definition
+//     name: string
+//     rule: Rule
+
+    
 
 def abort(message: string)
     print("{message}\n")
@@ -51,22 +44,57 @@ def iota
             return false if i == 0 else yield i    
 
 
-def generate(rule : Rule): auto // some AST for this rule
-    match rule
-        if [[Rule seq = rules]]
+struct ParserGenerator
+    // Table of ASTs for every Definition name
+    output: table<string; array<ExpressionPtr>>
 
-            var gen: array<auto> 
+    // Provides information to generate unique names
+    rule_counter: table<string; int>
+
+    // Currently generating code for 'rule'
+    current_rule: string
+
+
+
+
+
+def generate(var gen: ParserGenerator; gram: Grammar)
+    pass
+
+
+def generate(var gen: ParserGenerator; def: Definition)
+    if gen.gen |> key_exists(def.name)
+        abort("Duplicate rule definition")
+
+    gen.output[def.name] <- [{}] // Init empty (needed?)
+    gen.current_rule = def.name
+
+    gen |> generate(def.rule)
+
+
+def generate(var gen: ParserGenerator; rule: Rule) 
+    var output& = gen.output[current_rule]
+
+    match rule
+
+        if [[Rule nonterminal = $v(nonterm)]]
+            let name = nonterm
+            let count = rule_counter[name] |> string()
+
+            output |> push <| qmacro_block() <|
+                // $i(name)$i(count) is a generic name for unnamed nonterminals
+                var $i(name)$i(count) <- parser |> parse_$i(name)
+                return [[Result]] if !$i(name)$i(count).success
+
+            
+        if [[Rule seq = $v(rules)]]
 
             for rule, i in rules, iota()
-                gen |> push <| generate(rule?)
+                generate(output, rule?)
 
-            // Turn gen array of AST block pointers to AST block pointer
+        if [[Rule alt = $v(alts)]]
 
-            return 
-
-        if [[Rule alt = alts]]
-
-            var gen: array<auto> 
+            var gen: array<ExpressionPtr> 
 
             for alt, i in alts.alternatives, iota()
                 var block_name = "blk" + string(i)
@@ -103,7 +131,11 @@ variant Terminal
 
 
 
-def generate(var terminal: Terminal): auto // AST
+typedef Nonterminal = string;
+
+
+
+def generate(var terminal: Terminal): ExpressionPtr
 
     var input: string
 
@@ -112,7 +144,7 @@ def generate(var terminal: Terminal): auto // AST
 
             var q <- qmacro_block() <| $
                 return [[Result]] if !parser |> matches($v(l))
-            
+
             return q
 
         if [[Terminal range_ = $v(r) ]]
@@ -121,7 +153,6 @@ def generate(var terminal: Terminal): auto // AST
         if _
             abort("")
 
-    // TODO: remove
     return [[ExpressionPtr]]
 
 
