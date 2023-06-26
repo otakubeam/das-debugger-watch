@@ -102,7 +102,7 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                 let varname = "{name}{count}"
                 let parse_fun = "parse_{name}"
 
-                var t <- qmacro <| $
+                var t <- qmacro <|
                     let $i(varname) <- $c(parse_fun)(parser)
                     return [[Result]] if !$i(varname).success
 
@@ -112,6 +112,13 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
                 for rule, i in rules, iota()
                     gen |> generate(rule.rule)
+
+                var t <- qmacro <|
+                    let val <- 42 // Perform action
+                    return [[Result true, val, parser |> mark]]
+                
+                output |> emplace_new <| t
+
 
             if [[Rule alt = $v(alts)]] 
 
@@ -126,7 +133,7 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
                     var block_contents <- gen.output[gen.current_rule]
                     
-                    var t <- qmacro <| $
+                    var t <- qmacro <|
                         // "Alternative {i}: {rule}\n"
                                     
                         var parse_pos <- parser |> mark
@@ -207,12 +214,9 @@ def main
     var empty_seq : array<Rule_?>
     var seq <- [[Rule seq <- empty_seq]]
 
-    var n <- seq |>
-         seq_append(mul) |> seq_append(if_) |> seq_append(add)
+    var n <- seq |> seq_append(mul) |> seq_append(if_) |> seq_append(add)
 
-    print("{n}\n")
+    print("Rule raw: {n}\n")
 
     gen |> generate([[Definition name = "add", rule <- n ]])
 
-    for x,i,_ in  iota(), iota(), range(10)
-        print("{x}, {i}\n")
