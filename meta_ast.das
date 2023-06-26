@@ -115,18 +115,24 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
             if [[Rule alt = $v(alts)]] 
 
+                var results: array<ExpressionPtr>
+
                 for alt, i in alts, iota()
                     let block_name = "blk{i}"
                     let parse_pos = "pos{i}"
                     let result  = "res{i}"
 
+                    gen |> generate(alt.rule)
+
+                    var block_contents <- gen.output[gen.current_rule]
+                    
                     var t <- qmacro <| $
                         // "Alternative {i}: {rule}\n"
                                     
                         var parse_pos <- parser |> mark
 
                         var $i(block_name) <- $ <|
-                            generate(*alt)       
+                            $b(block_contents)
 
                         var $i(result) <- $i(block_name) |> invoke()
 
@@ -134,7 +140,10 @@ def generate(var gen: ParserGenerator; rule_: Rule)
 
                         parser |> reset(parse_pos)
                     
-                    output |> emplace_new <| t
+                    results |> emplace_new <| t 
+                
+                gen.output[gen.current_rule] <- results
+                
             if _
                 abort("TODO: more rules")
 
@@ -165,7 +174,7 @@ def seq_append(var seq: Rule; var new_: Rule): Rule
     return <- seq
 
 
-def generate(var terminal: Terminal): ExpressionPtr
+def generate(terminal: Terminal): ExpressionPtr
 
     var input: string
 
@@ -189,11 +198,6 @@ def generate(var terminal: Terminal): ExpressionPtr
 
 [export]
 def main
-    print("\n")
-    
-    generate([[Terminal lit = "123"]]) |> describe() |> print()
-
-
     var gen <- [[ParserGenerator]]
 
     var mul <- [[Rule nonterminal = "mul"]]
@@ -203,7 +207,8 @@ def main
     var empty_seq : array<Rule_?>
     var seq <- [[Rule seq <- empty_seq]]
 
-    var n <- seq |> seq_append(mul) |> seq_append(if_) |> seq_append(add)
+    var n <- seq |>
+         seq_append(mul) |> seq_append(if_) |> seq_append(add)
 
     print("{n}\n")
 
