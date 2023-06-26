@@ -1,0 +1,62 @@
+Rule raw: [[ [[ [[ [[ add]]; [[ +]]; [[ mul]]]]]]; [[ [[ [[ mul]]]]]]]]
+def public parse_add ( var  /*unused*/ parser:Parser -const ) : auto
+			$():auto
+		{
+			var  /*unused*/ parse_pos:auto -const <- mark(parser);
+			var  /*unused*/ blk1:auto -const <- $():auto
+			{
+									$():auto
+					{
+						let  /*unused*/ add0:auto const <- parse_add(parser);
+						if !add0.success
+							return [[]]
+;
+					}
+											if !matches(parser,"+")
+							return [[]]
+					$():auto
+					{
+						let  /*unused*/ mul0:auto const <- parse_mul(parser);
+						if !mul0.success
+							return [[]]
+;
+					}
+					$():auto
+					{
+						let  /*unused*/ val:auto const <- 42;
+						return [[/* undefined */ [[/* undefined */ true,val,mark(parser)]]]];
+					}
+;
+			};
+			var  /*unused*/ res1:auto -const <- invoke(blk1);
+			if res1.success
+				return res1
+;
+			reset(parser,parse_pos);
+		}
+		$():auto
+		{
+			var  /*unused*/ parse_pos:auto -const <- mark(parser);
+			var  /*unused*/ blk2:auto -const <- $():auto
+			{
+									$():auto
+					{
+						let  /*unused*/ mul0:auto const <- parse_mul(parser);
+						if !mul0.success
+							return [[]]
+;
+					}
+					$():auto
+					{
+						let  /*unused*/ val:auto const <- 42;
+						return [[/* undefined */ [[/* undefined */ true,val,mark(parser)]]]];
+					}
+;
+			};
+			var  /*unused*/ res2:auto -const <- invoke(blk2);
+			if res2.success
+				return res2
+;
+			reset(parser,parse_pos);
+		}
+

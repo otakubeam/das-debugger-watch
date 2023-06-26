@@ -237,7 +237,7 @@ def main
 
     alts <- alts |> rule_append(n) |> rule_append(n2)
 
-    print("Rule raw: {n}\n")
+    print("Rule raw: {alts}\n")
 
     gen |> generate([[Definition name = "parse_add", rule <- alts ]])
 
