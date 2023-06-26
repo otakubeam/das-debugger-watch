@@ -115,28 +115,28 @@ def generate(var gen: ParserGenerator; rule_: Rule)
                 for rule, i in rules, iota()
                     gen |> generate(rule.rule)
 
-            // if [[Rule alt = $v(alts)]] 
+            if [[Rule alt = $v(alts)]] 
 
-            //     for alt, i in alts.alternatives, iota()
-            //         let block_name = "blk{i}"
-            //         let parse_pos = "pos{i}"
-            //         let result  = "res{i}"
+                for alt, i in alts.alternatives, iota()
+                    let block_name = "blk{i}"
+                    let parse_pos = "pos{i}"
+                    let result  = "res{i}"
 
-            //         output |> push <| qmacro_block() <| $
-            //             // "Alternative {i}: {rule}\n"
+                    output |> emplace_new <| qmacro() <| $
+                        // "Alternative {i}: {rule}\n"
                                     
-            //             var parse_pos <- parser |> mark
+                        var parse_pos <- parser |> mark
 
-            //             var $i(block_name) <- $ <|
-            //                 generate(*alt)       
+                        var $i(block_name) <- $ <|
+                            generate(*alt)       
 
-            //             var $i(result) <- $i(block_name) |> invoke()
+                        var $i(result) <- $i(block_name) |> invoke()
 
-            //             return $i(result) if $i(result).success
+                        return $i(result) if $i(result).success
 
-            //             parser |> reset(parse_pos)
+                        parser |> reset(parse_pos)
                     
-            //         // Turn gen array of AST block pointers to AST block pointer
+                    // Turn gen array of AST block pointers to AST block pointer
 
             if _
                 abort("TODO: more rules")
