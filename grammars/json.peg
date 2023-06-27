@@ -1,0 +1,19 @@
+Grammar <- ws* Value ws*
+
+Value   <- Object | Array | Number | String 
+                  | True  | False  | Null
+
+Object  <- '{' ws* Member (ws* ',' ws* Member)* ws* '}'
+Array   <- '[' ws* Value  (ws* ',' ws* Value )* ws* ']'
+
+Number  <- MINUS? Integer (DOT DIGIT+)? ('e' | 'E') sign DIGIT+ 
+String  <- '"' (Escaped | [x20-x21] | [x23-x5B] | [x5D-x10FFFF])* '"'
+
+False   <- 'false'
+True    <- 'true'
+Null    <- 'null'
+
+Member  <- String ':' Value
+Integer <- '0' | [1-9] DIGIT*
+Escaped <- '\' ('b' | 'f' | 'n' | 'r' | 't' | 'u' hex{4}
+                    | DQ  | BKSLASH   | SLASH)
