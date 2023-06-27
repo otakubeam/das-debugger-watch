@@ -1,4 +1,3 @@
-module meta_ast
 
 require daslib/match public
 require daslib/fio
@@ -66,11 +65,11 @@ struct ParserGenerator
     // For use in actions.
     current_rule: string
 
-[_macro]
-def setup
-    if is_compiling_macros_in_module("meta_ast")
-        pass
-        // Add generated parser to the compiled code
+// [_macro]
+// def setup
+//     if is_compiling_macros_in_module("meta_ast")
+//         pass
+//         // Add generated parser to the compiled code
 
 def generate_wrapper(var gen: ParserGenerator)
     let rule_name = gen.current_rule
@@ -120,7 +119,7 @@ def generate(var gen: ParserGenerator; def_: Definition)
 
     gen |> generate(def_.rule)
 
-    var fun <- qmacro_function(def_.name) <| $ (var parser: Parser)
+    var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser)
         $b(gen.output[gen.current_rule])
 
     gen |> generate_wrapper |> describe |> print
@@ -288,5 +287,5 @@ def main
 
     print("Rule raw: {alts}\n")
 
-    gen |> generate([[Definition name = "parse_add", rule <- alts ]])
+    gen |> generate([[Definition name = "add", rule <- alts ]])
 
