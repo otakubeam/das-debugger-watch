@@ -1,3 +1,5 @@
+module meta_ast
+
 require daslib/match public
 require daslib/fio
 require daslib/rtti
@@ -51,6 +53,7 @@ def iota
             i += 1
             return false if i == 0 else yield i    
 
+typedef Result = tuple<success:bool; value:int; endpos:int>;
 
 struct ParserGenerator
     // Table of ASTs for every Definition name
@@ -63,6 +66,50 @@ struct ParserGenerator
     // For use in actions.
     current_rule: string
 
+[_macro]
+def setup
+    if is_compiling_macros_in_module("meta_ast")
+        pass
+        // Add generated parser to the compiled code
+
+def generate_wrapper(var gen: ParserGenerator)
+    let rule_name = gen.current_rule
+    let cache_table = "{rule_name}_cache"
+    let inner_parsing_fun = "parse_{rule_name}_inner"
+
+    var t <- qmacro_block <|
+        var mark = parser |> mark
+        
+        with parser 
+            if $i(cache_table) |> key_exists(index)
+                var result = $i(cache_table)[index]
+
+                parser |> reset(result.endpos)
+                return result
+
+            // Build new cache entry from scratch
+            
+            var res = [[Result]]
+            $i(cache_table)[mark] = res
+
+            while true
+                parser |> reset(mark)
+
+                var newres = $c(inner_parsing_fun)(parser)
+                var endpos = parser |> mark
+
+                // Break if no movement
+                break if res.endpos >= endpos
+
+                res = newres
+                $i(cache_table)[mark] = res
+
+            return res
+    
+    var wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
+        $b([{auto[] t}])
+
+    return wrapper_fun
 
 def generate(var gen: ParserGenerator; def_: Definition)
     if gen.output |> key_exists(def_.name)
@@ -75,6 +122,8 @@ def generate(var gen: ParserGenerator; def_: Definition)
 
     var fun <- qmacro_function(def_.name) <| $ (var parser: Parser)
         $b(gen.output[gen.current_rule])
+
+    gen |> generate_wrapper |> describe |> print
 
     fun |> describe |> print
 
