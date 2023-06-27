@@ -103,7 +103,7 @@ def generate_wrapper(var gen: ParserGenerator)
                 return result
 
             var result = $c(inner_parsing_fun)(parser)
-            var endpos = parser |> mark
+            // var endpos = parser |> mark
             $i(cache_table)[mark] = result
 
             return result
@@ -301,7 +301,7 @@ def generate(terminal: Terminal): ExpressionPtr
     return [[ExpressionPtr]]
 
 
-def make_primary_def(): Definition
+def make_primary_def(): Rule
     // Create first alternative: num
 
     var mul <- [[Rule nonterminal = "num"]]
@@ -309,9 +309,9 @@ def make_primary_def(): Definition
     var empty_seq: array<Rule_?>
     var seq <- [[Rule seq <- empty_seq]]
 
-    var n <- seq |> rule_append(add)
+    var n <- seq |> rule_append(mul)
 
-    // Create second alternative: mul
+    // Create second alternative: '(' add ')'
 
     var left <- [[Rule terminal <- [[Terminal lit = "("]]]]
     var add <- [[Rule nonterminal = "add"]]
@@ -329,7 +329,7 @@ def make_primary_def(): Definition
 
     alts <- alts |> rule_append(n) |> rule_append(n2)
 
-    return alts
+    return <- alts
 
 
 [export]
@@ -364,5 +364,8 @@ def main
 
     print("Rule raw: {alts}\n")
 
-    gen |> generate([[Definition name = "add", rule <- alts ]])
+    var alts2 <- make_primary_def()
 
+    // gen |> generate([[Definition name = "add", rule <- alts ]])
+
+    gen |> generate([[Definition name = "primary", rule <- alts2]])
