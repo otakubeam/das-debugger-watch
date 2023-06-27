@@ -71,10 +71,54 @@ struct ParserGenerator
 //         pass
 //         // Add generated parser to the compiled code
 
+def rule_left_recursive(name: string; rule: Rule): bool
+    match rule
+        if [[Rule alt = $v(alts)]] 
+            for a in alts
+                return true if rule_left_recursive(name, a.rule)
+        
+        if [[Rule seq = $v(seq)]]
+            var first = seq[0]
+            match first.rule 
+                if [[Rule nonterminal = $v(name_)]]
+                    return name_ == name 
+        if _
+            abort("TODO") // More generic algorithm
+
+    return false
+
 def generate_wrapper(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
     let inner_parsing_fun = "parse_{rule_name}_inner"
+
+    var t <- qmacro_block <|
+        var mark = parser |> mark
+        
+        with parser 
+            if $i(cache_table) |> key_exists(index)
+                var result = $i(cache_table)[index]
+
+                parser |> reset(result.endpos)
+                return result
+
+            var result = $c(inner_parsing_fun)(parser)
+            var endpos = parser |> mark
+            $i(cache_table)[mark] = result
+
+            return result
+    
+    var wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
+        $b([{auto[] t}])
+
+    return wrapper_fun    
+
+def generate_wrapper_leftrec(var gen: ParserGenerator)
+    let rule_name = gen.current_rule
+    let cache_table = "{rule_name}_cache"
+    let inner_parsing_fun = "parse_{rule_name}_inner"
+
+    
 
     var t <- qmacro_block <|
         var mark = parser |> mark
@@ -122,7 +166,10 @@ def generate(var gen: ParserGenerator; def_: Definition)
     var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser)
         $b(gen.output[gen.current_rule])
 
-    gen |> generate_wrapper |> describe |> print
+    if rule_left_recursive(def_.name, def_.rule)
+        gen |> generate_wrapper_leftrec |> describe |> print
+    else
+        gen |> generate_wrapper |> describe |> print
 
     fun |> describe |> print
 
@@ -253,6 +300,36 @@ def generate(terminal: Terminal): ExpressionPtr
 
     return [[ExpressionPtr]]
 
+
+def make_primary_def(): Definition
+    // Create first alternative: num
+
+    var mul <- [[Rule nonterminal = "num"]]
+
+    var empty_seq: array<Rule_?>
+    var seq <- [[Rule seq <- empty_seq]]
+
+    var n <- seq |> rule_append(add)
+
+    // Create second alternative: mul
+
+    var left <- [[Rule terminal <- [[Terminal lit = "("]]]]
+    var add <- [[Rule nonterminal = "add"]]
+    var right <- [[Rule terminal <- [[Terminal lit = ")"]]]]
+
+    var empty_seq2: array<Rule_?>
+    var seq2 <- [[Rule seq <- empty_seq2]]
+
+    var n2 <- seq2 |> rule_append(left) |> rule_append(add) |> rule_append(right)
+
+    // Assemble the rule
+
+    var empty_alts: array<Rule_?>
+    var alts <- [[Rule alt <- empty_alts]]
+
+    alts <- alts |> rule_append(n) |> rule_append(n2)
+
+    return alts
 
 
 [export]
