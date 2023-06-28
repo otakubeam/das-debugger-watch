@@ -1,3 +1,4 @@
+module meta_ast
 
 require daslib/match public
 require daslib/fio
@@ -15,7 +16,7 @@ require daslib/templates_boost
 
 variant Rule
     seq: array<Rule_?>   // R1 R2 R3
-    alt: array<Rule_?>   // R1 | R2 | R3
+    alt: array<Alternative>   // R1 | R2 | R3
     subrule: Rule_?      // (R1)
     
     maybe_repeat: Rule_? // Rule*
@@ -32,6 +33,7 @@ variant Rule
 
 
 struct Rule_
+    name: string
     rule: Rule
 
 
@@ -51,14 +53,12 @@ def iota
         var i: int = 0
         while true
             i += 1
-            return false if i == 0 else yield i    
+            return false if i == 0 else yield i
+
 
 typedef Result = tuple<success:bool; value:int; endpos:int>;
 
 struct ParserGenerator
-    // Table of ASTs for every Definition name
-    output: table<string; array<ExpressionPtr>>
-
     // Provides information to generate unique names
     rule_counter: table<string; int>
 
@@ -66,308 +66,7 @@ struct ParserGenerator
     // For use in actions.
     current_rule: string
 
-// [_macro]
-// def setup
-//     if is_compiling_macros_in_module("meta_ast")
-//         pass
-//         // Add generated parser to the compiled code
 
-def rule_left_recursive(name: string; rule: Rule): bool
-    match rule
-        if [[Rule alt = $v(alts)]] 
-            for a in alts
-                return true if rule_left_recursive(name, a.rule)
-        
-        if [[Rule seq = $v(seq)]]
-            var first = seq[0]
-            match first.rule 
-                if [[Rule nonterminal = $v(name_)]]
-                    return name_ == name 
-        if _
-            abort("TODO") // More generic algorithm
-
-    return false
-
-def generate_wrapper(var gen: ParserGenerator)
-    let rule_name = gen.current_rule
-    let cache_table = "{rule_name}_cache"
-    let inner_parsing_fun = "parse_{rule_name}_inner"
-
-    var t <- qmacro_block <|
-        var mark = parser |> mark
-        
-        with parser 
-            if $i(cache_table) |> key_exists(index)
-                var result = $i(cache_table)[index]
-
-                parser |> reset(result.endpos)
-                return result
-
-            var result = $c(inner_parsing_fun)(parser)
-            // var endpos = parser |> mark
-            $i(cache_table)[mark] = result
-
-            return result
-    
-    var wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
-        $b([{auto[] t}])
-
-    return wrapper_fun    
-
-def generate_wrapper_leftrec(var gen: ParserGenerator)
-    let rule_name = gen.current_rule
-    let cache_table = "{rule_name}_cache"
-    let inner_parsing_fun = "parse_{rule_name}_inner"
-
-    
-
-    var t <- qmacro_block <|
-        var mark = parser |> mark
-        
-        with parser 
-            if $i(cache_table) |> key_exists(index)
-                var result = $i(cache_table)[index]
-
-                parser |> reset(result.endpos)
-                return result
-
-            // Build new cache entry from scratch
-            
-            var res = [[Result]]
-            $i(cache_table)[mark] = res
-
-            while true
-                parser |> reset(mark)
-
-                var newres = $c(inner_parsing_fun)(parser)
-                var endpos = parser |> mark
-
-                // Break if no movement
-                break if res.endpos >= endpos
-
-                res = newres
-                $i(cache_table)[mark] = res
-
-            return res
-    
-    var wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
-        $b([{auto[] t}])
-
-    return wrapper_fun
-
-def generate(var gen: ParserGenerator; def_: Definition)
-    if gen.output |> key_exists(def_.name)
-        abort("Duplicate rule definition")
-
-    // gen.output[def_.name] <- array<ExpressionPtr> // Init empty (needed?)
-    gen.current_rule = def_.name
-
-    gen |> generate(def_.rule)
-
-    var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser)
-        $b(gen.output[gen.current_rule])
-
-    if rule_left_recursive(def_.name, def_.rule)
-        gen |> generate_wrapper_leftrec |> describe |> print
-    else
-        gen |> generate_wrapper |> describe |> print
-
-    fun |> describe |> print
-
-
-
-def get_action_block(var alternative: Alternative): ExpressionPtr
-    return alternative.action
-
-
-def generate(var gen: ParserGenerator; rule_: Rule) 
-    unsafe 
-        var output& = gen |> get_output()
-
-        match rule_
-            if [[Rule terminal = $v(term)]]
-                output |> emplace_new <| generate(term)
-
-
-            if [[Rule nonterminal = $v(nonterm)]]
-                let name = nonterm
-                let count = gen.rule_counter[name] |> string()
-
-                // varname is a generic name for unnamed nonterminals
-                // e.g. add4, add5, mul0
-                let varname = "{name}{count}"
-                let parse_fun = "parse_{name}"
-
-                var t <- qmacro <|
-                    let $i(varname) <- $c(parse_fun)(parser)
-                    return [[Result]] if !$i(varname).success
-
-                output |> emplace_new <| t
-                
-            if [[Rule seq = $v(rules)]]
-
-                for rule, i in rules, iota()
-                    gen |> generate(rule.rule)
-
-            if [[Rule alt = $v(alts)]] 
-
-                var results: array<ExpressionPtr>
-
-                for alt, i in alts, iota()
-
-                    let block_name = "blk{i}"
-                    let parse_pos = "pos{i}"
-                    let result  = "res{i}"
-                    let action_block = get_action_block(alt)
-
-                    gen |> generate(alt.rule)
-
-                    var block_contents <- gen.output[gen.current_rule]
-                    
-                    var t <- qmacro <|
-                        let val <- $b(action_block)
-                        return [[Result true, val, parser |> mark]]
-
-                    block_contents |> push <| t
-                    
-                    var t <- qmacro <|
-                        // "Alternative {i}: {rule}\n"
-                        
-                        var parse_pos <- parser |> mark
-
-                        var $i(block_name) <- $ <|
-                            $b(block_contents)
-
-                        var $i(result) <- $i(block_name) |> invoke()
-
-                        return $i(result) if $i(result).success
-
-                        parser |> reset(parse_pos)
-                    
-                    results |> emplace_new <| t 
-                
-                gen.output[gen.current_rule] <- results
-
-
-
-        return
-
-
-
-def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
-
-    match rule_
-        if [[Rule terminal = $v(term)]]
-            return [{generate(term)}]
-
-        if [[Rule nonterminal = $v(nonterm)]]
-            let name = nonterm
-            let count = "{gen.rule_counter[name]}"
-
-            // varname is a generic name for unnamed nonterminals
-            // e.g. add4, add5, mul0
-            let varname = "{name}{count}"
-            let parse_fun = "parse_{name}"
-
-            var t <- qmacro <|
-                let $i(varname) <- $c(parse_fun)(parser)
-                return [[Result]] if !$i(varname).success
-
-            return <- t
-            
-        if [[Rule seq = $v(rules)]]
-
-            var result: array<ExpressionPtr>
-
-            for rule, i in rules, iota()
-                for expr in gen |> generate(rule.rule)
-                    result |> emplace (expr)
-            
-            return <- result
-
-        if [[Rule alt = $v(alts)]] 
-
-            var results: array<ExpressionPtr>
-
-            for alt, i in alts, iota()
-
-                let block_name = "blk{i}"
-                let parse_pos = "pos{i}"
-                let result  = "res{i}"
-                let action_block = get_action_block(alt)
-
-                var block_contents <- gen |> generate(alt.rule)
-
-                var t <- qmacro <|
-                    let val <- invoke($b(action_block))
-                    return [[Result true, val, parser |> mark]]
-
-                block_contents |> push <| t
-                
-                // Add next alternative
-
-                var t <- qmacro <|
-                    var parse_pos <- parser |> mark
-
-                    var $i(block_name) <- $ <|
-                        $b(block_contents)
-
-                    var $i(result) <- $i(block_name) |> invoke()
-
-                    return $i(result) if $i(result).success
-
-                    parser |> reset(parse_pos)
-                
-                results |> emplace_new <| t 
-            
-            return <- results
-
-        if [[Rule maybe_repeat = $v(rule_)]]
-
-            let rule_code = gen |> generate(rule_.rule)
-            
-            var t <- qmacro <|
-                
-                while true
-                    var res <- invoke <| $
-                        $b(rule_code)
-                    break if !res.success
-
-            return [{auto t}]
-
-        if [[Rule repeat = $v(rule_)]]
-
-            let rule_code = gen |> generate(rule_.rule)
-
-            var t <- qmacro <|
-            
-                var res <- invoke <| $
-                    $b(rule_code)
-                return if !res.success
-
-                while true
-                    var res <- invoke <| $
-                        $b(rule_code)
-                    break if !res.success
-
-            return [{auto t}]
-        if [[Rule subrule = $v(subrule)]]
-            // Create a new unnamed subrule for the (...)
-            
-            let rule_code = gen |> generate(rule_.rule)
-
-            var t <- qmacro <|
-                var result <- invoke <| 
-                    $b(rule_code)
-                return [[Result]] if !result.success
-
-            return [{auto t}]
-
-
-
-    abort("Unreachable")
-    return [[array<ExpressionPtr>]]
-        
 variant Terminal
     // Literal: "Hello world"
     lit: string 
@@ -382,112 +81,12 @@ variant Terminal
 typedef Nonterminal = string;
 
 
-def rule_append(var seq: Rule; var new_: Rule): Rule
-    match seq
-        if [[Rule seq = $v(rules)]]
-            // Transform Rule into Rule_
-            rules |> push (new [[Rule_ rule <- new_]])
-            return <- [[Rule seq <- rules]]
-
-        if [[Rule alt = $v(alts)]]
-            alts |> push (new [[Rule_ rule <- new_]])
-            return <- [[Rule alt <- alts]]
-
-    abort("Unreachable")
-    return <- seq
-
-
-def generate(terminal: Terminal): ExpressionPtr
-
-    var input: string
-
-    match terminal 
-        if [[Terminal lit = $v(l) ]]
-            return qmacro(return [[Result]] if !parser |> matches($v(l)))
-
-
-        if [[Terminal range_ = $v(r) ]]
-            
-            return qmacro(return [[Result]] if !parser |> in_range($v(l)))
-
-
-    return [[ExpressionPtr]]
-
+// [_macro]
+// def setup
+//     if is_compiling_macros_in_module("meta_ast")
+//         pass
+//         // Add generated parser to the compiled code
 
 struct Alternative
-    rule: Rule?
+    rule: Rule_?
     action: ExpressionPtr
-
-
-def make_primary_def(): Rule
-    // Create first alternative: num
-
-    var mul <- [[Rule nonterminal = "num"]]
-
-    var empty_seq: array<Rule_?>
-    var seq <- [[Rule seq <- empty_seq]]
-
-    var n <- seq |> rule_append(mul)
-
-    // Create second alternative: '(' add ')'
-
-    var left <- [[Rule terminal <- [[Terminal lit = "("]]]]
-    var add <- [[Rule nonterminal = "add"]]
-    var right <- [[Rule terminal <- [[Terminal lit = ")"]]]]
-
-    var empty_seq2: array<Rule_?>
-    var seq2 <- [[Rule seq <- empty_seq2]]
-
-    var n2 <- seq2 |> rule_append(left) |> rule_append(add) |> rule_append(right)
-
-    // Assemble the rule
-
-    var empty_alts: array<Rule_?>
-    var alts <- [[Rule alt <- empty_alts]]
-
-    alts <- alts |> rule_append(n) |> rule_append(n2)
-
-    return <- alts
-
-
-def make_add_rule(): Rule
-    
-    // Create first alternative: add '+' mul
-
-    var mul <- [[Rule nonterminal = "mul"]]
-    var plus <- [[Rule terminal <- [[Terminal lit = "+"]]]]
-    var add <- [[Rule nonterminal = "add"]]
-
-    var empty_seq: array<Rule_?>
-    var seq <- [[Rule seq <- empty_seq]]
-
-    var n <- seq |> rule_append(add) |> rule_append(plus) |> rule_append(mul)
-
-    // Create second alternative: mul
-
-    var simply_mul <- [[Rule nonterminal = "mul"]]
-
-    var empty_seq2: array<Rule_?>
-    var seq2 <- [[Rule seq <- empty_seq2]]
-
-    var n2 <- seq2 |> rule_append(simply_mul)
-
-
-    var empty_alts: array<Rule_?>
-    var alts <- [[Rule alt <- empty_alts]]
-
-    alts <- alts |> rule_append(n) |> rule_append(n2)
-
-    print("Rule raw: {alts}\n")
-
-
-[export]
-def main
-    var gen <- [[ParserGenerator]]
-
-    var alts <- make_add_rule()
-    var alts2 <- make_primary_def()
-
-    // gen |> generate([[Definition name = "add", rule <- alts ]])
-
-    gen |> generate([[Definition name = "primary", rule <- alts2]])
