@@ -5,14 +5,16 @@ require daslib/ast_boost
 require daslib/templates_boost
 
 def rule_append(var seq: Rule; var new_: Rule): Rule
+    var r = new [[Rule_ rule <- new_]]
+
     match seq
         if [[Rule seq = $v(rules)]]
             // Transform Rule into Rule_
-            rules |> push (new [[Rule_ rule <- new_]])
+            rules |> push (r)
             return <- [[Rule seq <- rules]]
 
         if [[Rule alt = $v(alts)]]
-            alts |> push ([[Alternative rule <- new_, action <- [[ExpressionPtr]]]])
+            alts |> emplace ([[Alternative rule <- r, action <- [[ExpressionPtr]]]])
             return <- [[Rule alt <- alts]]
 
     abort("Unreachable")
@@ -81,3 +83,6 @@ def make_add_rule(): Rule
     return <- alts
 
 
+
+def make_named_repetitions
+    pass

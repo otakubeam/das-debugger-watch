@@ -15,7 +15,7 @@ def rule_left_recursive(name: string; rule: Rule): bool
     match rule
         if [[Rule alt = $v(alts)]] 
             for a in alts
-                return true if rule_left_recursive(name, a.rule)
+                return true if rule_left_recursive(name, a.rule.rule)
         
         if [[Rule seq = $v(seq)]]
             var first = seq[0]
@@ -119,7 +119,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
     match rule_
         if [[Rule terminal = $v(term)]]
-            return <- [{auto generate(term)}]
+            return <- [{auto[] generate(term)}]
 
         if [[Rule nonterminal = $v(nonterm)]]
             let name = nonterm
@@ -134,7 +134,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 let $i(varname) <- $c(parse_fun)(parser)
                 return [[Result]] if !$i(varname).success
 
-            return <- [{auto t}]
+            return <- [{auto[] t}]
             
         if [[Rule seq = $v(rules)]]
 
@@ -155,19 +155,22 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 let block_name = "blk{i}"
                 let parse_pos = "pos{i}"
                 let result  = "res{i}"
-                let action_block = alt.action
+                // XXX: local variable action can't init (move) from a constant value
+                // var action <- alt.action
+                // var action_block = [{auto action}]
+                var action_block <- [{auto[] quote(${return 42;})}]
 
-                var block_contents <- gen |> generate(alt.rule)
+                var block_contents <- gen |> generate(alt.rule.rule)
 
                 var t <- qmacro <|
                     let val <- invoke($b(action_block))
                     return [[Result true, val, parser |> mark]]
 
-                block_contents |> push <| t
+                block_contents |> emplace <| t
                 
                 // Add next alternative
 
-                var t <- qmacro <|
+                var alternative_code <- qmacro <|
                     var parse_pos <- parser |> mark
 
                     var $i(block_name) <- $ <|
@@ -179,26 +182,38 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
                     parser |> reset(parse_pos)
                 
-                results |> emplace_new <| t 
+                results |> emplace_new <| alternative_code 
             
             return <- results
 
         if [[Rule maybe_repeat = $v(rule_)]]
 
-            let rule_code = gen |> generate(rule_.rule)
+            var rule_code <- gen |> generate(rule_.rule)
             
-            var t <- qmacro <|
-                
-                while true
-                    var res <- invoke <| $
-                        $b(rule_code)
-                    break if !res.success
+            var t : ExpressionPtr
 
-            return [{auto t}]
+            var type_decl: TypeDeclPtr <- (rule_code |> back)._type
+
+            if rule_.name == ""
+                t := qmacro <|    
+                    while true
+                        var res <- invoke <| $
+                            $b(rule_code)
+                        break if !res.success
+            else 
+                t := qmacro <|
+                    var vaules : array<$t(type_decl)>
+                    while true
+                        var res <- invoke <| $
+                            $b(rule_code)
+                        break if !res.success
+                        values |> emplace <| res
+
+            return <- [{auto[] t}]
 
         if [[Rule repeat = $v(rule_)]]
 
-            let rule_code = gen |> generate(rule_.rule)
+            var rule_code <- gen |> generate(rule_.rule)
 
             var t <- qmacro <|
             
@@ -211,19 +226,19 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                         $b(rule_code)
                     break if !res.success
 
-            return [{auto t}]
+            return <- [{auto[] t}]
 
         if [[Rule subrule = $v(subrule)]]
             // Create a new unnamed subrule for the (...)
             
-            let rule_code = gen |> generate(rule_.rule)
+            var rule_code <- gen |> generate(subrule.rule)
 
             var t <- qmacro <|
                 var result <- invoke <| 
                     $b(rule_code)
                 return [[Result]] if !result.success
 
-            return [{auto t}]
+            return <- [{auto[] t}]
 
 
 
