@@ -107,8 +107,10 @@ def generate(var gen: ParserGenerator; def_: Definition)
 
     var coded_block <- gen |> generate(def_.rule)
 
-    var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser)
+    var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): Result
         $b(coded_block)
+
+    // var fun <- qmacro_function("parse_{def_.name}_inner", $b(coded_block))
 
     if rule_left_recursive(def_.name, def_.rule)
         gen |> generate_wrapper_leftrec |> describe |> print
@@ -121,7 +123,7 @@ def generate(var gen: ParserGenerator; def_: Definition)
 def get_rule_type(var gen: ParserGenerator; name; rule: Rule): TypeDeclPtr
     match rule
         if [[Rule nonterminal = $v(nonterm)]]
-            return <- gen.rule_types[name]
+            return <- gen.rule_types[nonterm]
 
         if [[Rule subrule = $v(subrule)]]
             abort("Infer subrule type")
@@ -151,7 +153,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
             let varname = "{name}{count}"
             let parse_fun = "parse_{name}"
 
-            var t <- qmacro <|
+            var t <- qmacro_block <|
                 let $i(varname) <- $c(parse_fun)(parser)
                 return [[Result]] if !$i(varname).success
 
@@ -168,7 +170,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
             let varname = "{name}{count}"
             let parse_fun = "parse_{name}"
 
-            var t <- qmacro <|
+            var t <- qmacro_block <|
                 var $i(varname) <- $c(parse_fun)(parser)
                 return [[Result]] if !$i(varname).success
                 var $i(result_name) <- $i(varname).value
@@ -200,7 +202,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
                 var block_contents <- gen |> generate(alt.rule.rule)
 
-                var t <- qmacro <|
+                var t <- qmacro_block <|
                     let val <- invoke($b(action_block))
                     return [[Result true, val, parser |> mark]]
 
@@ -208,7 +210,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 
                 // Add next alternative
 
-                var alternative_code <- qmacro <|
+                var alternative_code <- qmacro_block <|
                     var parse_pos <- parser |> mark
 
                     var $i(block_name) <- $ <|
@@ -234,7 +236,6 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
             // for c in rule_code
             //     print("{describe(c)}\n")
-            // abort("here {rule_code}")
 
             if rule_.name == ""
                 t := qmacro <|    
@@ -243,13 +244,13 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                             $b(rule_code)
                         break if !res.success
             else 
-                t := qmacro <|
+                t := qmacro_block <|
                     var vaules : array<$t(type_decl)>
                     while true
                         var res <- invoke <| $
                             $b(rule_code)
                         break if !res.success
-                        values |> emplace <| res
+                        values |> emplace <| res.value
 
             return <- [{auto[] t}]
 
