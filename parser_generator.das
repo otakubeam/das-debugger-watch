@@ -195,10 +195,10 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 let block_name = "blk{i}"
                 let parse_pos = "pos{i}"
                 let result  = "res{i}"
-                // XXX: local variable action can't init (move) from a constant value
-                // var action <- alt.action
-                // var action_block = [{auto action}]
-                var action_block <- [{auto[] quote(${return 42;})}]
+
+                var action := alt.action
+                var action_block <- [{auto[] action}]
+                // var action_block <- [{auto[] quote(${return 42;})}]
 
                 var block_contents <- gen |> generate(alt.rule.rule)
 

@@ -20,6 +20,17 @@ def rule_append(var seq: Rule; var new_: Rule): Rule
     abort("Unreachable")
     return <- seq
 
+def rule_append_with(var seq: Rule; var new_: Rule; var act: ExpressionPtr): Rule
+    var r = new [[Rule_ rule <- new_]]
+
+    match seq
+        if [[Rule alt = $v(alts)]]
+            alts |> emplace ([[Alternative rule <- r, action <- act]])
+            return <- [[Rule alt <- alts]]
+
+    abort("Unreachable")
+    return <- seq
+
 
 def make_primary_def(): Rule
     // Create first alternative: num
@@ -91,6 +102,9 @@ def make_named_repetitions
     var empty_alts: array<Alternative>
     var alts <- [[Rule alt <- empty_alts]]
 
-    alts <- alts |> rule_append(rep)
+    var t <- qmacro_block <| $
+        return a + 1
+
+    alts <- alts |> rule_append_with(rep) <| t
 
     return <- alts
