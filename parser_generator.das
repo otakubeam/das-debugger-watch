@@ -22,8 +22,16 @@ def rule_left_recursive(name: string; rule: Rule): bool
             match first.rule 
                 if [[Rule nonterminal = $v(name_)]]
                     return name_ == name 
-        if _
-            abort("TODO") // More generic algorithm
+
+                    
+        if [[Rule maybe_repeat = $v(rule_)]]
+            return true if rule_left_recursive(name, rule_.rule)
+            
+        if [[Rule nonterminal = $v(name_)]]
+            return true if name == name_
+
+        if _ 
+            abort("TODO: rule_left_recursive")
 
     return false
 
@@ -110,6 +118,19 @@ def generate(var gen: ParserGenerator; def_: Definition)
     fun |> describe |> print
 
 
+def get_rule_type(var gen: ParserGenerator; name; rule: Rule): TypeDeclPtr
+    match rule
+        if [[Rule nonterminal = $v(nonterm)]]
+            return <- gen.rule_types[name]
+
+        if [[Rule subrule = $v(subrule)]]
+            abort("Infer subrule type")
+
+    return [[TypeDeclPtr]]
+
+def set_rule_type(var gen: ParserGenerator; rule_name: string; var type_: TypeDeclPtr)
+    gen.rule_types[rule_name] <- type_
+
 
 def get_action_block(var alternative: Alternative): ExpressionPtr
     return alternative.action
@@ -136,6 +157,23 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
             return <- [{auto[] t}]
             
+
+        if [[Rule bound_nonterminal = $v(nonterm)]]
+            let name = nonterm._0
+            let result_name = nonterm._1
+            let count = "{gen.rule_counter[name]}"
+
+            // varname is a generic name for unnamed nonterminals
+            // e.g. add4, add5, mul0
+            let varname = "{name}{count}"
+            let parse_fun = "parse_{name}"
+
+            var t <- qmacro <|
+                var $i(varname) <- $c(parse_fun)(parser)
+                return [[Result]] if !$i(varname).success
+                var $i(result_name) <- $i(varname).value
+
+            return <- [{auto[] t}]
         if [[Rule seq = $v(rules)]]
 
             var result: array<ExpressionPtr>
@@ -192,7 +230,11 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
             
             var t : ExpressionPtr
 
-            var type_decl: TypeDeclPtr <- (rule_code |> back)._type
+            var type_decl: TypeDeclPtr <- gen |> get_rule_type(rule_.name, rule_.rule)
+
+            // for c in rule_code
+            //     print("{describe(c)}\n")
+            // abort("here {rule_code}")
 
             if rule_.name == ""
                 t := qmacro <|    
@@ -273,9 +315,11 @@ def generate(terminal: Terminal): ExpressionPtr
 def main
     var gen <- [[ParserGenerator]]
 
-    var alts <- make_add_rule()
-    var alts2 <- make_primary_def()
-
+    // var alts <- make_add_rule()
+    // var alts2 <- make_primary_def()
+    
+    var alts3 <- make_named_repetitions()
+    gen |> set_rule_type("mul", typeinfo(ast_typedecl type<int>))
     // gen |> generate([[Definition name = "add", rule <- alts ]])
 
-    gen |> generate([[Definition name = "primary", rule <- alts2]])
+    gen |> generate([[Definition name = "start", rule <- alts3]])

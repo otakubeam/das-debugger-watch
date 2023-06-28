@@ -26,6 +26,7 @@ variant Rule
 
     terminal: Terminal 
     nonterminal: Nonterminal
+    bound_nonterminal: tuple<Nonterminal; string>
 
     // Do not consume the input
     not_rule: Rule_?     // !Rule
@@ -33,13 +34,16 @@ variant Rule
 
 
 struct Rule_
-    name: string
+    name: string // Bound name for ? * + ()
     rule: Rule
 
 
 // E.g. rule_name: rule
 struct Definition
     name: string
+
+    type_: TypeDeclPtr
+
     rule: Rule
     
 
@@ -56,11 +60,16 @@ def iota
             return false if i == 0 else yield i
 
 
+
 typedef Result = tuple<success:bool; value:int; endpos:int>;
+
 
 struct ParserGenerator
     // Provides information to generate unique names
     rule_counter: table<string; int>
+
+    // Maps rule name into its declared type
+    rule_types: table<string; TypeDeclPtr>
 
     // Currently generating code for 'rule'
     // For use in actions.

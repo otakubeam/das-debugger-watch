@@ -85,4 +85,12 @@ def make_add_rule(): Rule
 
 
 def make_named_repetitions
-    pass
+    var mul <- [[Rule nonterminal = "mul"]]
+    var rep <- [[Rule maybe_repeat = new [[Rule_ rule <- mul, name = "a"]] ]]
+    
+    var empty_alts: array<Alternative>
+    var alts <- [[Rule alt <- empty_alts]]
+
+    alts <- alts |> rule_append(rep)
+
+    return <- alts
