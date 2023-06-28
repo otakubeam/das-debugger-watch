@@ -103,7 +103,10 @@ def make_named_repetitions
     var alts <- [[Rule alt <- empty_alts]]
 
     var t <- qmacro_block <| $
-        return a + 1
+        var sum = 0
+        for t in a 
+            sum += t
+        return sum
 
     alts <- alts |> rule_append_with(rep) <| t
 

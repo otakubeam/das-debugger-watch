@@ -229,28 +229,24 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
         if [[Rule maybe_repeat = $v(rule_)]]
 
             var rule_code <- gen |> generate(rule_.rule)
-            
+            var result_handle = rule_.name
+             
             var t : ExpressionPtr
 
             var type_decl: TypeDeclPtr <- gen |> get_rule_type(rule_.name, rule_.rule)
 
-            // for c in rule_code
-            //     print("{describe(c)}\n")
-
             if rule_.name == ""
                 t := qmacro <|    
                     while true
-                        var res <- invoke <| $
-                            $b(rule_code)
+                        var res <- invoke($b(rule_code))
                         break if !res.success
             else 
                 t := qmacro_block <|
-                    var vaules : array<$t(type_decl)>
+                    var $i(result_handle) : array<$t(type_decl)>
                     while true
-                        var res <- invoke <| $
-                            $b(rule_code)
+                        var res <- invoke($b(rule_code))
                         break if !res.success
-                        values |> emplace <| res.value
+                        $i(result_handle) |> emplace <| res.value
 
             return <- [{auto[] t}]
 
