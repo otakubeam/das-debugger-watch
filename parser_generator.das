@@ -18,17 +18,19 @@ def rule_left_recursive(name: string; rule: Rule): bool
                 return true if rule_left_recursive(name, a.rule.rule)
         
         if [[Rule seq = $v(seq)]]
-            var first = seq[0]
-            match first.rule 
-                if [[Rule nonterminal = $v(name_)]]
-                    return name_ == name 
-
+            return true if rule_left_recursive(name, seq[0].rule)
                     
         if [[Rule maybe_repeat = $v(rule_)]]
             return true if rule_left_recursive(name, rule_.rule)
             
         if [[Rule nonterminal = $v(name_)]]
             return true if name == name_
+
+        if [[Rule bound_nonterminal = $v(tup)]]
+            return true if tup._0 == name
+
+        if [[Rule terminal = _]]
+            return false
 
         if _ 
             abort("TODO: rule_left_recursive")
@@ -64,9 +66,7 @@ def generate_wrapper(var gen: ParserGenerator)
 def generate_wrapper_leftrec(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
-    let inner_parsing_fun = "parse_{rule_name}_inner"
-
-    
+    let inner_parsing_fun = "parse_{rule_name}_inner"    
 
     var t <- qmacro_block <|
         var mark = parser |> mark
@@ -176,6 +176,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 var $i(result_name) <- $i(varname).value
 
             return <- [{auto[] t}]
+            
         if [[Rule seq = $v(rules)]]
 
             var result: array<ExpressionPtr>
@@ -283,28 +284,28 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
     abort("Unreachable")
     return <- [[array<ExpressionPtr>]]
-        
-
-
-
 
 def generate(terminal: Terminal): ExpressionPtr
-
-    var input: string
-
     match terminal 
         if [[Terminal lit = $v(l) ]]
 
-            return qmacro <|
+            return qmacro_block <|
                 return [[Result]] if !parser |> matches($v(l))
-
 
         if [[Terminal range_ = $v(r) ]]
             
-            return qmacro <|
+            return qmacro_block <|
                 return [[Result]] if !parser |> in_range($v(r))
 
+        if [[Terminal number = $v(handle)]]
+             
+            return qmacro_block <|
+                var res = parser |> lex_number
+                return [[Result]] if !res.success 
+                let $i(handle) = res.value
 
+
+    abort("TODO")
     return [[ExpressionPtr]]
 
 
@@ -312,11 +313,11 @@ def generate(terminal: Terminal): ExpressionPtr
 def main
     var gen <- [[ParserGenerator]]
 
-    // var alts <- make_add_rule()
-    // var alts2 <- make_primary_def()
+    var gram <- [{auto make_add_def(); make_mul_def(); make_unary_def(); make_primary_def()}]
     
-    var alts3 <- make_named_repetitions()
-    gen |> set_rule_type("mul", typeinfo(ast_typedecl type<int>))
-    // gen |> generate([[Definition name = "add", rule <- alts ]])
+    for rule in gram
+        gen |> set_rule_type(rule.name, rule.type_)
+    
+    for rule in gram 
+        gen |> generate(rule)
 
-    gen |> generate([[Definition name = "start", rule <- alts3]])

@@ -83,8 +83,11 @@ variant Terminal
     // Range: [0-9]
     range_: tuple<int; int> 
 
+    // Name of the result (int)
+    number: string
 
-    // TODO: special terminals -> number, whitespace, etc
+    // WS <- [' ', '\n', '\t']*
+    whitespace: void? 
 
 
 typedef Nonterminal = string;
