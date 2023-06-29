@@ -93,12 +93,6 @@ variant Terminal
 typedef Nonterminal = string;
 
 
-// [_macro]
-// def setup
-//     if is_compiling_macros_in_module("meta_ast")
-//         pass
-//         // Add generated parser to the compiled code
-
 struct Alternative
     rule: Rule_?
     action: ExpressionPtr

@@ -110,14 +110,18 @@ def generate(var gen: ParserGenerator; def_: Definition)
     var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): Result
         $b(coded_block)
 
-    // var fun <- qmacro_function("parse_{def_.name}_inner", $b(coded_block))
+    compiling_module() |> add_function(fun)
 
     if rule_left_recursive(def_.name, def_.rule)
-        gen |> generate_wrapper_leftrec |> describe |> print
+        var wrapper <- gen |> generate_wrapper_leftrec
+        compiling_module() |> add_function(wrapper)
+        // gen |> generate_wrapper_leftrec |> describe |> print
     else
-        gen |> generate_wrapper |> describe |> print
+        var wrapper <- gen |> generate_wrapper
+        compiling_module() |> add_function(wrapper)
+        // gen |> generate_wrapper |> describe |> print
 
-    fun |> describe |> print
+    //fun |> describe |> print
 
 
 def get_rule_type(var gen: ParserGenerator; name; rule: Rule): TypeDeclPtr
@@ -309,15 +313,17 @@ def generate(terminal: Terminal): ExpressionPtr
     return [[ExpressionPtr]]
 
 
-[export]
-def main
-    var gen <- [[ParserGenerator]]
+[_macro]
+def setup
+    if is_compiling_macros_in_module("parser_generator")
+        var gen <- [[ParserGenerator]]
 
-    var gram <- [{auto make_add_def(); make_mul_def(); make_unary_def(); make_primary_def()}]
-    
-    for rule in gram
-        gen |> set_rule_type(rule.name, rule.type_)
-    
-    for rule in gram 
-        gen |> generate(rule)
+        var gram <- [{auto make_add_def(); make_mul_def(); make_unary_def(); make_primary_def()}]
+        
+        for rule in gram
+            gen |> set_rule_type(rule.name, rule.type_)
+        
+        for rule in gram 
+            gen |> generate(rule)
+
 
