@@ -67,4 +67,4 @@ def main
     var parser <- [[Parser]]
     parser.input = "1+1+1+1"
     
-    var result <- parser |> parse_add
+    var result <- parser |> parse_primary

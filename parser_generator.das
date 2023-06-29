@@ -213,7 +213,8 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 var block_contents <- gen |> generate(alt.rule.rule)
 
                 var t <- qmacro_block <|
-                    let val: int <- invoke($b(action_block))
+                    let val: int <- invoke <| $(): int
+                        $b(action_block)
                     // For some reason I cannot directly return [[Result]]
                     var result = [[Result true, val, parser |> mark]]
                     return result
@@ -325,7 +326,7 @@ class GenerateParser : AstStructureAnnotation
     def override apply ( var st:StructurePtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string ) : bool
         var gen <- [[ParserGenerator]]
 
-        var gram <- [{auto make_add_def(); make_mul_def(); make_unary_def(); make_primary_def()}]
+        var gram <- [{auto make_primary_def()}]
         
         for rule in gram
             gen |> set_rule_type(rule.name, rule.type_)

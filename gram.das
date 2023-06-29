@@ -50,7 +50,7 @@ def make_primary_rule(): Rule
     
     var alts <- make_empty_alt()
 
-    alts <- alts |> rule_append_with(a1) <| qmacro_block($ { return m; })
+    // alts <- alts |> rule_append_with(a1) <| qmacro_block($ { return m; })
     alts <- alts |> rule_append_with(a2) <| qmacro_block($ { return n; })
 
     return <- alts
