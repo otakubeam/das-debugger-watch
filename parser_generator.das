@@ -7,6 +7,8 @@ require daslib/ast
 require daslib/ast_boost
 require daslib/templates_boost
 
+options log_infer_passes
+
 require meta_ast
 require gram
 
@@ -37,6 +39,10 @@ def rule_left_recursive(name: string; rule: Rule): bool
 
     return false
 
+
+typedef Result = tuple<success:bool; value:int; endpos:int>;
+
+
 def generate_wrapper(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
@@ -47,7 +53,7 @@ def generate_wrapper(var gen: ParserGenerator)
         
         with parser 
             if $i(cache_table) |> key_exists(index)
-                var result = $i(cache_table)[index]
+                var result : Result = $i(cache_table)[index]
 
                 parser |> reset(result.endpos)
                 return result
@@ -203,13 +209,14 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
                 var action := alt.action
                 var action_block <- [{auto[] action}]
-                // var action_block <- [{auto[] quote(${return 42;})}]
 
                 var block_contents <- gen |> generate(alt.rule.rule)
 
                 var t <- qmacro_block <|
-                    let val <- invoke($b(action_block))
-                    return [[Result true, val, parser |> mark]]
+                    let val: int <- invoke($b(action_block))
+                    // For some reason I cannot directly return [[Result]]
+                    var result = [[Result true, val, parser |> mark]]
+                    return result
 
                 block_contents |> emplace <| t
                 
@@ -304,7 +311,7 @@ def generate(terminal: Terminal): ExpressionPtr
         if [[Terminal number = $v(handle)]]
              
             return qmacro_block <|
-                var res = parser |> lex_number
+                var res : Result = parser |> lex_number
                 return [[Result]] if !res.success 
                 let $i(handle) = res.value
 
@@ -313,9 +320,9 @@ def generate(terminal: Terminal): ExpressionPtr
     return [[ExpressionPtr]]
 
 
-[_macro]
-def setup
-    if is_compiling_macros_in_module("parser_generator")
+[structure_macro(name=parser_generator)]
+class GenerateParser : AstStructureAnnotation
+    def override apply ( var st:StructurePtr; var group:ModuleGroup; args:AnnotationArgumentList; var errors : das_string ) : bool
         var gen <- [[ParserGenerator]]
 
         var gram <- [{auto make_add_def(); make_mul_def(); make_unary_def(); make_primary_def()}]
@@ -326,4 +333,5 @@ def setup
         for rule in gram 
             gen |> generate(rule)
 
+        return true
 

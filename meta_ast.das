@@ -61,9 +61,6 @@ def iota
 
 
 
-typedef Result = tuple<success:bool; value:int; endpos:int>;
-
-
 struct ParserGenerator
     // Provides information to generate unique names
     rule_counter: table<string; int>

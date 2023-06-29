@@ -66,7 +66,7 @@ def make_unary_rule(): Rule
     
     var minus <- [[Rule terminal <- [[Terminal lit = "-"]]]]
     var unary <- [[Rule bound_nonterminal = [[auto "unary", "u"]]]]
-    var primary <- [[Rule bound_nonterminal = [[auto "prim", "p"]]]]
+    var primary <- [[Rule bound_nonterminal = [[auto "primary", "p"]]]]
 
     // Create first alternative: '-' unary'
 
@@ -156,7 +156,9 @@ def make_add_rule(): Rule
 
     alts <- alts |> rule_append_with(a1) <| qmacro_block($ { return a + m; })
     alts <- alts |> rule_append_with(a2) <| qmacro_block($ { return a - m; })
-    alts <- alts |> rule_append_with(a3) <| qmacro_block($ { return m; })
+    var t <- qmacro <|
+        return m
+    alts <- alts |> rule_append_with(a3) <| t
 
     return <- alts
 

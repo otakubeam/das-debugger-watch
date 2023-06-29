@@ -1,14 +1,38 @@
 
 require parser_generator public
 
+options log_infer_passes
+
 require strings
+require daslib/strings_boost
+
+
 
 struct Parser
     add_cache: table<int; Result>
+    primary_cache: table<int; Result>
+    unary_cache: table<int; Result>
+    mul_cache: table<int; Result>
 
     input: string
     index: int
 
+
+def get_current_char(var parser: Parser): int
+    return parser.input |> character_at(parser.index)
+
+
+def lex_number(var parser: Parser): Result
+    return [[Result]] if !parser |> get_current_char |> is_number
+    
+    var result = 0
+
+    while parser |> get_current_char |> is_number()
+        result *= 10
+        result +=  parser |> get_current_char - 'a'
+        parser |> move(1)
+
+    return [[Result true, result, parser |> mark]]
 
 def mark(parser: Parser): int
     return parser.index
@@ -27,17 +51,19 @@ def matches(var parser: Parser; template_: string): bool
         return true
 
 
-typedef Result = tuple<success:bool; value:int; endpos:int>;
-
 
 def move(var parser: Parser; offset : int) 
     parser.index += offset
 
 
+[parser_generator]
+struct Dummy {}
+
+
 [export]
 def main
     print("Compiles")
-    
+
     var parser <- [[Parser]]
     parser.input = "1+1+1+1"
     
