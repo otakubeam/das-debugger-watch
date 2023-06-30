@@ -66,7 +66,7 @@ def main
     print("Compiles\n")
 
     var parser <- [[Parser]]
-    parser.input = "1+1+1+1"
+    parser.input = "1+2*2+1"
     
     var result <- parser |> parse_add
     print("{result.value}\n")

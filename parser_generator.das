@@ -93,6 +93,7 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
                 parser |> reset(mark)
 
                 var newres = $c(inner_parsing_fun)(parser)
+                print("{$v(inner_parsing_fun)}: {newres}\n")
                 var endpos = parser |> mark
 
                 // Break if no movement
@@ -100,7 +101,9 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
 
                 res = newres
                 $i(cache_table)[mark] = res
+            
 
+            parser |> reset(res.endpos)
             return res
     
     var wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
@@ -297,7 +300,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
             
             var rule_code <- gen |> generate(subrule.rule)
 
-            var t <- qmacro <|
+            var t <- qmacro_block <|
                 var result <- invoke <| 
                     $b(rule_code)
                 return [[Result]] if !result.success
