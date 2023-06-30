@@ -1,7 +1,7 @@
 
 require parser_generator public
 
-options log_infer_passes
+//options log_infer_passes
 
 require strings
 require daslib/strings_boost

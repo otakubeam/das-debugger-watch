@@ -7,7 +7,7 @@ require daslib/ast
 require daslib/ast_boost
 require daslib/templates_boost
 
-options log_infer_passes
+//options log_infer_passes
 
 require meta_ast
 require gram
@@ -112,9 +112,13 @@ def generate(var gen: ParserGenerator; def_: Definition)
     gen.current_rule = def_.name
 
     var coded_block <- gen |> generate(def_.rule)
-
+    
+    
     var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): Result
         $b(coded_block)
+        return [[Result]]
+
+    fun.body |> debug_expression |> print
 
     compiling_module() |> add_function(fun)
 
@@ -127,8 +131,7 @@ def generate(var gen: ParserGenerator; def_: Definition)
         compiling_module() |> add_function(wrapper)
         // gen |> generate_wrapper |> describe |> print
 
-    //fun |> describe |> print
-
+    
 
 def get_rule_type(var gen: ParserGenerator; name; rule: Rule): TypeDeclPtr
     match rule
@@ -148,11 +151,18 @@ def get_action_block(var alternative: Alternative): ExpressionPtr
     return alternative.action
 
 
+def flatten_block(var blk: ExprBlock?)
+    var result : array<ExpressionPtr>
+    for e in blk.list
+        result |> emplace_new <| clone_to_move(e)
+    return <- result
+
+
 def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
     match rule_
         if [[Rule terminal = $v(term)]]
-            return <- [{auto[] generate(term)}]
+            return <- flatten_block(generate(term) as ExprBlock)
 
         if [[Rule nonterminal = $v(nonterm)]]
             let name = nonterm
@@ -167,7 +177,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 let $i(varname) <- $c(parse_fun)(parser)
                 return [[Result]] if !$i(varname).success
 
-            return <- [{auto[] t}]
+            return <- flatten_block(t as ExprBlock)
             
 
         if [[Rule bound_nonterminal = $v(nonterm)]]
@@ -208,17 +218,20 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 let result  = "res{i}"
 
                 var action := alt.action
-                var action_block <- [{auto[] action}]
+                var action_block <- action as ExprBlock |> flatten_block
 
                 var block_contents <- gen |> generate(alt.rule.rule)
 
                 var t <- qmacro_block <|
-                    let val: int <- invoke($b(action_block))
+                    let val: int <- invoke <| $(): int
+                        $b(action_block)
+
                     // For some reason I cannot directly return [[Result]]
                     var result = [[Result true, val, parser |> mark]]
                     return result
 
-                block_contents |> emplace <| t
+                for e in flatten_block(t as ExprBlock)
+                    block_contents |> emplace <| e
                 
                 // Add next alternative
 
