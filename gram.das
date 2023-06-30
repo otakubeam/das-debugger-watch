@@ -156,9 +156,7 @@ def make_add_rule(): Rule
 
     alts <- alts |> rule_append_with(a1) <| qmacro_block($ { return a + m; })
     alts <- alts |> rule_append_with(a2) <| qmacro_block($ { return a - m; })
-    var t <- qmacro <|
-        return m
-    alts <- alts |> rule_append_with(a3) <| t
+    alts <- alts |> rule_append_with(a3) <| qmacro_block($ { return m; })
 
     return <- alts
 

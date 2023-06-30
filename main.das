@@ -19,6 +19,7 @@ struct Parser
 
 
 def get_current_char(var parser: Parser): int
+    return -1 if parser.input |> length == parser.index 
     return parser.input |> character_at(parser.index)
 
 
@@ -29,7 +30,7 @@ def lex_number(var parser: Parser): Result
 
     while parser |> get_current_char |> is_number()
         result *= 10
-        result +=  parser |> get_current_char - 'a'
+        result +=  parser |> get_current_char - '0'
         parser |> move(1)
 
     return [[Result true, result, parser |> mark]]
@@ -62,9 +63,10 @@ struct Dummy {}
 
 [export]
 def main
-    print("Compiles")
+    print("Compiles\n")
 
     var parser <- [[Parser]]
     parser.input = "1+1+1+1"
     
     var result <- parser |> parse_add
+    print("{result.value}\n")

@@ -195,7 +195,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                 return [[Result]] if !$i(varname).success
                 var $i(result_name) <- $i(varname).value
 
-            return <- [{auto[] t}]
+            return <- flatten_block(t as ExprBlock)
             
         if [[Rule seq = $v(rules)]]
 
@@ -219,7 +219,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
 
                 var action := alt.action
                 var action_block <- action as ExprBlock |> flatten_block
-
+                // var action_block <- [{auto[] action}]
                 var block_contents <- gen |> generate(alt.rule.rule)
 
                 var t <- qmacro_block <|
@@ -273,7 +273,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                         break if !res.success
                         $i(result_handle) |> emplace <| res.value
 
-            return <- [{auto[] t}]
+            return <- flatten_block(t as ExprBlock)
 
         if [[Rule repeat = $v(rule_)]]
 
@@ -290,7 +290,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                         $b(rule_code)
                     break if !res.success
 
-            return <- [{auto[] t}]
+            return <- flatten_block(t as ExprBlock)
 
         if [[Rule subrule = $v(subrule)]]
             // Create a new unnamed subrule for the (...)
@@ -302,7 +302,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
                     $b(rule_code)
                 return [[Result]] if !result.success
 
-            return <- [{auto[] t}]
+            return <- flatten_block(t as ExprBlock)
 
 
 
