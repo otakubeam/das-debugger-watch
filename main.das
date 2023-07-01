@@ -9,10 +9,10 @@ require daslib/strings_boost
 
 
 struct Parser
-    add_cache: table<int; Result>
     primary_cache: table<int; Result>
     unary_cache: table<int; Result>
     mul_cache: table<int; Result>
+    add_cache: table<int; Result>
 
     input: string
     index: int
@@ -34,6 +34,7 @@ def lex_number(var parser: Parser): Result
         parser |> move(1)
 
     return [[Result true, result, parser |> mark]]
+
 
 def mark(parser: Parser): int
     return parser.index
@@ -63,10 +64,9 @@ struct Dummy {}
 
 [export]
 def main
-    print("Compiles\n")
 
     var parser <- [[Parser]]
-    parser.input = "1+2*2+1"
+    parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
     
     var result <- parser |> parse_add
-    print("{result.value}\n")
+    print("{result.value} == -6 ?\n")
