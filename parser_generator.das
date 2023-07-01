@@ -136,7 +136,7 @@ def generate(var gen: ParserGenerator; def_: Definition)
 
     
 
-def get_rule_type(var gen: ParserGenerator; name; rule: Rule): TypeDeclPtr
+def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule
         if [[Rule nonterminal = $v(nonterm)]]
             return <- gen.rule_types[nonterm]
@@ -261,7 +261,7 @@ def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
              
             var t : ExpressionPtr
 
-            var type_decl: TypeDeclPtr <- gen |> get_rule_type(rule_.name, rule_.rule)
+            var type_decl: TypeDeclPtr <- gen |> get_rule_type(rule_.rule)
 
             if rule_.name == ""
                 t := qmacro <|    

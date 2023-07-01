@@ -12,6 +12,7 @@ require daslib/macro_boost
 require daslib/ast_boost
 require daslib/defer
 
+require parser_generator
 require meta_ast
 
 struct MacroRule
@@ -20,8 +21,9 @@ struct MacroRule
 
 
 [macro_function]
-def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog:ProgramPtr)
-    macro_verify(expr.name == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
+def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog: ProgramPtr)
+    macro_verify(expr.name |> string() == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
+
     (rules |> back).alternatives |> emplace <| expr
 
     
@@ -44,8 +46,8 @@ def into_rule(var expr: ExpressionPtr): Rule
         // Bound terminal
 
         var as_expr <- expr as ExprAsVariant
-        var bound_name <- as_expr.name
-        var bound_rule <- (as_expr.value as ExprVar).name
+        var bound_name <- as_expr.name |> string()
+        var bound_rule <- (as_expr.value as ExprVar).name |> string()
         return <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]
 
     elif expr is ExprAsVariant
@@ -55,49 +57,85 @@ def into_rule(var expr: ExpressionPtr): Rule
 
         var as_expr <- expr as ExprAsVariant 
 
-        var rule: Rule <- into_rule(as_expr.value)
-        rule |> add_name(as_expr.name)
+        var inscope rule: Rule <- into_rule(as_expr.value)
+        rule |> add_name(as_expr.name |> string())
 
         return <- rule
 
     elif expr is ExprVar
         // Nonbound terminal
-        var name = (expr as ExprVar).name
+        var name = (expr as ExprVar).name |> string()
 
         if name == "number"
-            return <- [[Rule terminal <- [[Terminal number]]]]
+            return <- [[Rule terminal <- [[Terminal number = ""]]]]
         else 
             return <- [[Rule nonterminal <- name]]
     
     abort("TODO: Unreachable")
-    return [[Rule]]
+    return <- [[Rule]]
+
+
+[macro_function]
+def into_rule_(var expr: ExpressionPtr): Rule_?
+    if expr is ExprAsVariant && (expr as ExprAsVariant).value is ExprVar
+        // Bound terminal
+
+        var as_expr <- expr as ExprAsVariant
+        var bound_name <- as_expr.name |> string()
+        var bound_rule <- (as_expr.value as ExprVar).name |> string()
+        return <- new [[Rule_ rule <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]]]
+
+    elif expr is ExprAsVariant
+        // This way goes *<rule> as <name>,
+        //               <rule>? as <name>,
+        //               +<rule> as <name>, etc...
+
+        var as_expr <- expr as ExprAsVariant 
+
+        var rule: Rule_? <- into_rule_(as_expr.value)
+        rule.name = as_expr.name |> string()
+
+        return <- rule
+
+    elif expr is ExprVar
+        // Nonbound terminal
+        var name = (expr as ExprVar).name |> string()
+
+        if name == "number"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal number = ""]]]]]]
+        else 
+            return <- new [[Rule_ rule <- [[Rule nonterminal <- name]]]]
+    
+    abort("TODO: Unreachable")
+    return <- new [[Rule_]]
 
 
 def transform(var rule: MacroRule): Definition
-    var name = rule.rule.variables.name
-    var type_ = rule.rule._type
+    unsafe
+        var name = rule.rule.variables[0].name |> string()
+        var inscope type_ <- rule.rule._type
 
-    // Transform array<ExprCall?> into an array of Rules
+        // Transform array<ExprCall?> into an array of Rules
 
-    var alternatives: array<Alternative>
-    
-    for alt in expr.arguments
-
-        var blk <- alt.arguments |> back
-        expr.arguments |> pop
+        var inscope alternatives: array<Alternative>
         
-        var sequence: array<Rule_?>
+        for alt in rule.alternatives
 
-        for sequence_elem in expr.arguments
-            sequence |> push <| into_rule(sequence_elem)
-    
-        alternatives |> emplace_new <| [[Alternative 
-                                         rule <- new [[Rule seq <- sequence]], 
-                                         action <- blk]]
-    
-    return <- [[Definition name = "{name}", 
-                type_ <- type_, 
-                rule <- [[Rule alt <- alt]] ]]
+            var blk: ExpressionPtr <- alt.arguments |> back
+            alt.arguments |> pop
+            
+            var sequence: array<Rule_?>
+
+            for sequence_elem in alt.arguments
+                sequence |> push <| into_rule_(sequence_elem)
+        
+            alternatives |> push <| [[Alternative 
+                                      rule <- new [[Rule_ rule <- [[Rule seq <- sequence]]]], 
+                                      action <- blk]]
+        
+        return <- [[Definition name = "{name}", 
+                    type_ <- type_, 
+                    rule <- [[Rule alt <- alternatives]] ]]
 
 
 [call_macro(name="parse")]
@@ -176,7 +214,7 @@ class ParseMacro : AstCallMacro
         
         for list_expr in expression_block.list
             if list_expr is ExprLet
-                rules |> emplace <| [[Rule rule = list_expr as ExprLet]]
+                rules |> emplace <| [[MacroRule rule = list_expr as ExprLet]]
             elif list_expr is ExprCall
                 rules |> add_alternative(list_expr as ExprCall, prog)
             else 
@@ -184,17 +222,17 @@ class ParseMacro : AstCallMacro
 
         // Transform
         
-        var gram: array<Definition>
+        var inscope gram: array<Definition>
 
         for mrule in rules
             gram |> push(mrule |> transform)
 
         // Generate
 
-        var gen <- [[ParserGenerator]]
+        var inscope gen <- [[ParserGenerator]]
         
         for rule in gram
-            gen |> set_rule_type(rule.name, rule.type_)
+            gen |> set_rule_type(rule.name |> string(), rule.type_)
         
         for rule in gram 
             gen |> generate(rule)
@@ -203,14 +241,6 @@ class ParseMacro : AstCallMacro
 
         return <- qmacro(1) // Just return something
 
-
-def public match_type(anytype,anything) : void
-    //! this is a macro, it will be replaced with a match expression of specified type
-    pass
-
-def public match_expr(anything) : void
-    //! this is a macro, it will be replaced with a match expression
-    pass
 
 [_macro]
 def private setup
