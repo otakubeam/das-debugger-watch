@@ -6,26 +6,106 @@ options strict_smart_pointers = true
 
 module parse_macro
 
-require daslib/ast_boost
 require daslib/templates_boost
-require daslib/macro_boost
 require daslib/strings_boost
+require daslib/macro_boost
+require daslib/ast_boost
 require daslib/defer
 
-struct Rule
-    rule: ExprLet // from let rule: type
-    alternatives: array<ExprCall>
+require meta_ast
 
-def add_alternative(var rules: array<Rule>; var expr: ExprCall; prog:ProgramPtr;)
+struct MacroRule
+    rule: ExprLet? // from let rule: type
+    alternatives: array<ExprCall?>
+
+
+[macro_function]
+def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog:ProgramPtr)
     macro_verify(expr.name == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
-    rules |> back . alternatives |> emplace <| (expr as ExprCall)
+    (rules |> back).alternatives |> emplace <| expr
+
+    
+[macro_function]
+def add_name(var rule: Rule; var name: string)
+    match rule 
+        if [[Rule repeat = $v(rep)]]
+            rep.name <- name
+        if [[Rule option = $v(opt)]]
+            opt.name <- name
+        if [[Rule maybe_repeat = $v(rep)]]
+            rep.name <- name
+        if _
+            abort("Unreachable")
+
+
+[macro_function]
+def into_rule(var expr: ExpressionPtr): Rule
+    if expr is ExprAsVariant && (expr as ExprAsVariant).value is ExprVar
+        // Bound terminal
+
+        var as_expr <- expr as ExprAsVariant
+        var bound_name <- as_expr.name
+        var bound_rule <- (as_expr.value as ExprVar).name
+        return <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]
+
+    elif expr is ExprAsVariant
+        // This way goes *<rule> as <name>,
+        //               <rule>? as <name>,
+        //               +<rule> as <name>, etc...
+
+        var as_expr <- expr as ExprAsVariant 
+
+        var rule: Rule <- into_rule(as_expr.value)
+        rule |> add_name(as_expr.name)
+
+        return <- rule
+
+    elif expr is ExprVar
+        // Nonbound terminal
+        var name = (expr as ExprVar).name
+
+        if name == "number"
+            return <- [[Rule terminal <- [[Terminal number]]]]
+        else 
+            return <- [[Rule nonterminal <- name]]
+    
+    abort("TODO: Unreachable")
+    return [[Rule]]
+
+
+def transform(var rule: MacroRule): Definition
+    var name = rule.rule.variables.name
+    var type_ = rule.rule._type
+
+    // Transform array<ExprCall?> into an array of Rules
+
+    var alternatives: array<Alternative>
+    
+    for alt in expr.arguments
+
+        var blk <- alt.arguments |> back
+        expr.arguments |> pop
+        
+        var sequence: array<Rule_?>
+
+        for sequence_elem in expr.arguments
+            sequence |> push <| into_rule(sequence_elem)
+    
+        alternatives |> emplace_new <| [[Alternative 
+                                         rule <- new [[Rule seq <- sequence]], 
+                                         action <- blk]]
+    
+    return <- [[Definition name = "{name}", 
+                type_ <- type_, 
+                rule <- [[Rule alt <- alt]] ]]
+
 
 [call_macro(name="parse")]
 class ParseMacro : AstCallMacro
     //! Implements `parse` macro.
     //! Usage:
     //!    parse expression
-    //!        let add : int // Define add rule as the following
+    //!        let add : int
     //!    
     //!        rule(add as a, '+', mul as m) <|
     //!            return a + m
@@ -41,7 +121,7 @@ class ParseMacro : AstCallMacro
     //!
     //!    let my_var = expresssion("1+2")
     //!
-    //! - The pattern is let <rule_name>: <type> followed by a series of calls of `rule` function
+    //! - The pattern is let <rule_name>: <type> followed by a series of calls to `rule` function
     //! - The typing in `let add: int` is significant and will not work otherwise.
     //! - The last argument of the rule function is a semantic action that will be exeuted
     //!     upon the matching of the rule. Names used in actions are defined with 
@@ -82,7 +162,7 @@ class ParseMacro : AstCallMacro
         assume what = expr.arguments[0]
         assume blk = expr.arguments[1]
         
-        macro_verify(what._type!=null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
+        macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
         macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
         macro_verify(blk is ExprMakeBlock, prog, expr.at, "match `block` argument must be immediate block declaration")
         
@@ -92,29 +172,37 @@ class ParseMacro : AstCallMacro
         
         // Collect
         
-        var rules: array<Rule>
+        var rules: array<MacroRule>
         
-        for expr in expression_block.list
-            if expr is ExprLet
-                rules |> emplace <| [[Rule rule = expr as ExprLet]]
-            elif expr is ExprCall
-                rules |> add_alternative(expr as ExprCall, prog)
+        for list_expr in expression_block.list
+            if list_expr is ExprLet
+                rules |> emplace <| [[Rule rule = list_expr as ExprLet]]
+            elif list_expr is ExprCall
+                rules |> add_alternative(list_expr as ExprCall, prog)
             else 
-                macro_verify(false, prog, expr.at, "expressions in the parse block should be either let or call")
-
+                macro_verify(false, prog, list_expr.at, "expressions in the parse block should be either let or call")
 
         // Transform
+        
+        var gram: array<Definition>
+
+        for mrule in rules
+            gram |> push(mrule |> transform)
 
         // Generate
 
+        var gen <- [[ParserGenerator]]
         
-        var inscope prefix : array<ExpressionPtr>
+        for rule in gram
+            gen |> set_rule_type(rule.name, rule.type_)
+        
+        for rule in gram 
+            gen |> generate(rule)
 
+        // At this point the fucntions for rules are added to the compiling module
 
+        return <- qmacro(1) // Just return something
 
-        for ei in range(eli)
-            prefix |> emplace(iff)
-            return <- qmacro($b(prefix))
 
 def public match_type(anytype,anything) : void
     //! this is a macro, it will be replaced with a match expression of specified type

@@ -5,7 +5,9 @@ require parser_generator public
 
 require strings
 require daslib/strings_boost
+require daslib/debug
 
+require parse_macro
 
 
 struct Parser
@@ -67,6 +69,15 @@ def main
 
     var parser <- [[Parser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
+    
+    parse integer_value 
+        let value: int
+
+        rule(add as a, '+', mul as m) <|
+            return a + m
+        rule(add as a, '-', mul as m) <|
+            return a - m
+        
     
     var result <- parser |> parse_add
     print("{result.value} == -6 ?\n")
