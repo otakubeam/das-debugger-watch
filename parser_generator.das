@@ -116,7 +116,6 @@ def generate(var gen: ParserGenerator; def_: Definition)
 
     var coded_block <- gen |> generate(def_.rule)
     
-    
     var fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): Result
         $b(coded_block)
         return [[Result]]
@@ -162,7 +161,6 @@ def flatten_block(var blk: ExprBlock?)
 
 
 def generate(var gen: ParserGenerator; rule_: Rule): array<ExpressionPtr>
-
     match rule_
         if [[Rule terminal = $v(term)]]
             return <- flatten_block(generate(term) as ExprBlock)

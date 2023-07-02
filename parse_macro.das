@@ -24,9 +24,7 @@ struct MacroRule
 
 [macro_function]
 def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog: ProgramPtr)
-
     // macro_verify(expr.name |> string() == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
-
     (rules |> back).alternatives |> emplace <| expr
 
     
@@ -109,6 +107,16 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
         else 
             return <- new [[Rule_ rule <- [[Rule nonterminal <- name]]]]
     
+    elif expr is ExprConstString
+        var const_string <- expr as ExprConstString
+        return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal lit = const_string.value |> string()]]]]]]
+   
+    elif expr is ExprConstInt
+        abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
+
+
+    breakpoint()
+
     abort("TODO: Unreachable")
     return <- new [[Rule_]]
 
@@ -134,7 +142,7 @@ def transform(var rule: MacroRule): Definition
         
             alternatives |> emplace <| [[Alternative 
                                       rule <- new [[Rule_ rule <- [[Rule seq <- sequence]]]], 
-                                      action <- blk]]
+                                      action <- (blk as ExprMakeBlock)._block]]
         
         return <- [[Definition name = "{name}", 
                     type_ <- type_, 
@@ -184,14 +192,16 @@ class ParseMacro : AstCallMacro
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
         macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
         
-        assume what = expr.arguments[0]
         assume blk = expr.arguments[1]
         
-        macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
+        var t2 := blk as ExprMakeBlock
+
+        // macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
         macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
         macro_verify(blk is ExprMakeBlock, prog, expr.at, "match `block` argument must be immediate block declaration")
         
         var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
+
         macro_verify(length(expression_block.finalList) == 0, prog, expr.at, "match `block` argument can't have finally section")
         macro_verify(expression_block.list[0] is ExprLet, prog, expr.at, "parse `block` argument should begin with let expression")
         
@@ -217,7 +227,7 @@ class ParseMacro : AstCallMacro
         // Generate
 
         var inscope gen <- [[ParserGenerator]]
-        
+
         for rule in gram
             gen |> set_rule_type(rule.name |> string(), rule.type_)
         
@@ -225,8 +235,9 @@ class ParseMacro : AstCallMacro
             gen |> generate(rule)
 
         // At this point the fucntions for rules are added to the compiling module
-        
-        return <- [[ExpressionPtr]] // Just return something
+        breakpoint()
+
+        return <- new [[ExprConstInt() value = 0]] // Just return something
 
 
 [_macro]
