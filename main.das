@@ -6,7 +6,6 @@ require parser_generator public
 require strings
 require daslib/strings_boost
 
-options debugger
 require daslib/debug
 
 require parse_macro
@@ -77,8 +76,22 @@ def main
         rule(mul as m) <|
             return m
 
+        let mul: int
+
+        rule(mul as m, "*", prim as p) <|
+            return m * p 
+        rule(mul as m, "/", prim as p) <|
+            return m / p 
+        rule(prim as p) <|
+            return p 
+
+        let prim: int
+        
+        rule("(", add as a, ")") <|
+            return a
+        rule(number as n) <| 
+            return n
+
     var res <- parser |> parse_add
 
-    return 0
-
-    // print("{result.value} == -6 ?\n")
+    print("{res.value} == -6 ?\n")

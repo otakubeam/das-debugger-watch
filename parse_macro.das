@@ -114,9 +114,6 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
     elif expr is ExprConstInt
         abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
 
-
-    breakpoint()
-
     abort("TODO: Unreachable")
     return <- new [[Rule_]]
 
@@ -233,9 +230,6 @@ class ParseMacro : AstCallMacro
         
         for rule in gram 
             gen |> generate(rule)
-
-        // At this point the fucntions for rules are added to the compiling module
-        breakpoint()
 
         return <- qmacro_expr($ {1;}) // Just return something
 
