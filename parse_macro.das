@@ -124,7 +124,7 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 def transform(var rule: MacroRule): Definition
     unsafe
         var name = rule.rule.variables[0].name |> string()
-        var inscope type_ <- rule.rule._type
+        var inscope type_ <- rule.rule.variables[0]._type
 
         // Transform array<ExprCall?> into an array of Rules
 
@@ -207,13 +207,13 @@ class ParseMacro : AstCallMacro
         
         // Collect
         
-        var rules: array<MacroRule>
+        var rules_: array<MacroRule>
         
         for list_expr in expression_block.list
             if list_expr is ExprLet
-                rules |> emplace <| [[MacroRule rule = list_expr as ExprLet]]
+                rules_ |> emplace <| [[MacroRule rule = list_expr as ExprLet]]
             elif list_expr is ExprCall
-                rules |> add_alternative(list_expr as ExprCall, prog)
+                rules_ |> add_alternative(list_expr as ExprCall, prog)
             else 
                 macro_verify(false, prog, list_expr.at, "expressions in the parse block should be either let or call")
 
@@ -221,7 +221,7 @@ class ParseMacro : AstCallMacro
         
         var inscope gram: array<Definition>
 
-        for mrule in rules
+        for mrule in rules_
             gram |> emplace(mrule |> transform)
 
         // Generate
@@ -237,7 +237,7 @@ class ParseMacro : AstCallMacro
         // At this point the fucntions for rules are added to the compiling module
         breakpoint()
 
-        return <- new [[ExprConstInt() value = 0]] // Just return something
+        return <- qmacro_expr(1) // Just return something
 
 
 [_macro]
