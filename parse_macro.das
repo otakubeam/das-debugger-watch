@@ -237,7 +237,7 @@ class ParseMacro : AstCallMacro
         // At this point the fucntions for rules are added to the compiling module
         breakpoint()
 
-        return <- qmacro_expr(1) // Just return something
+        return <- qmacro_expr($ {1;}) // Just return something
 
 
 [_macro]
