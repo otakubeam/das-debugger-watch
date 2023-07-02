@@ -57,7 +57,6 @@ def matches(var parser: Parser; template_: string): bool
         return true
 
 
-
 def move(var parser: Parser; offset : int) 
     parser.index += offset
 

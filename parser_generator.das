@@ -120,18 +120,14 @@ def generate(var gen: ParserGenerator; def_: Definition)
         $b(coded_block)
         return [[Result]]
 
-    fun.body |> debug_expression |> print
-
     compiling_module() |> add_function(fun)
 
     if rule_left_recursive(def_.name, def_.rule)
         var wrapper <- gen |> generate_wrapper_leftrec
         compiling_module() |> add_function(wrapper)
-        // gen |> generate_wrapper_leftrec |> describe |> print
     else
         var wrapper <- gen |> generate_wrapper
         compiling_module() |> add_function(wrapper)
-        // gen |> generate_wrapper |> describe |> print
 
     
 
