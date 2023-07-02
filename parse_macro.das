@@ -12,6 +12,8 @@ require daslib/macro_boost
 require daslib/ast_boost
 require daslib/defer
 
+require daslib/debug
+
 require parser_generator
 require meta_ast
 
@@ -22,7 +24,8 @@ struct MacroRule
 
 [macro_function]
 def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog: ProgramPtr)
-    macro_verify(expr.name |> string() == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
+
+    // macro_verify(expr.name |> string() == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
 
     (rules |> back).alternatives |> emplace <| expr
 
@@ -129,7 +132,7 @@ def transform(var rule: MacroRule): Definition
             for sequence_elem in alt.arguments
                 sequence |> push <| into_rule_(sequence_elem)
         
-            alternatives |> push <| [[Alternative 
+            alternatives |> emplace <| [[Alternative 
                                       rule <- new [[Rule_ rule <- [[Rule seq <- sequence]]]], 
                                       action <- blk]]
         
@@ -172,27 +175,11 @@ class ParseMacro : AstCallMacro
         // if we are reporting errors, and macro did not fold - no point showing errors inside match - there will be too many, and they are meaningless
         return !is_reporting_compilation_errors()
 
-
     def override canFoldReturnResult ( expr:smart_ptr<ExprCallMacro> ) : bool
-        // function can't decide if its void or not, until match is folded
         return false
 
     def override preVisit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : void
-        return if length(expr.arguments) != 2
-
-        assume blk = expr.arguments[1]
-        
-        return if blk._type == null
-        return if !blk._type.isGoodBlockType
-        return if !(blk is ExprMakeBlock)
-        
-        // we mark all if's inside the match to not fold, so that we can fold the match later
-        
-        var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
-        for ee in expression_block.list
-            if ee is ExprCall 
-                (ee as ExprCall).if_flags |= IfFlags doNotFold
-
+        return 
 
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
         macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
@@ -225,7 +212,7 @@ class ParseMacro : AstCallMacro
         var inscope gram: array<Definition>
 
         for mrule in rules
-            gram |> push(mrule |> transform)
+            gram |> emplace(mrule |> transform)
 
         // Generate
 
@@ -238,8 +225,8 @@ class ParseMacro : AstCallMacro
             gen |> generate(rule)
 
         // At this point the fucntions for rules are added to the compiling module
-
-        return <- qmacro(1) // Just return something
+        
+        return <- [[ExpressionPtr]] // Just return something
 
 
 [_macro]

@@ -60,10 +60,6 @@ def move(var parser: Parser; offset : int)
     parser.index += offset
 
 
-[parser_generator]
-struct Dummy {}
-
-
 [export]
 def main
 
@@ -77,6 +73,8 @@ def main
             return a + m
         rule(add as a, '-', mul as m) <|
             return a - m
+        rule(mul as m) <|
+            return m
         
     
     var result <- parser |> parse_add
