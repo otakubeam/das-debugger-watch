@@ -42,41 +42,6 @@ def add_name(var rule: Rule; var name: string)
 
 
 [macro_function]
-def into_rule(var expr: ExpressionPtr): Rule
-    if expr is ExprAsVariant && (expr as ExprAsVariant).value is ExprVar
-        // Bound terminal
-
-        var as_expr <- expr as ExprAsVariant
-        var bound_name <- as_expr.name |> string()
-        var bound_rule <- (as_expr.value as ExprVar).name |> string()
-        return <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]
-
-    elif expr is ExprAsVariant
-        // This way goes *<rule> as <name>,
-        //               <rule>? as <name>,
-        //               +<rule> as <name>, etc...
-
-        var as_expr <- expr as ExprAsVariant 
-
-        var inscope rule: Rule <- into_rule(as_expr.value)
-        rule |> add_name(as_expr.name |> string())
-
-        return <- rule
-
-    elif expr is ExprVar
-        // Nonbound terminal
-        var name = (expr as ExprVar).name |> string()
-
-        if name == "number"
-            return <- [[Rule terminal <- [[Terminal number = ""]]]]
-        else 
-            return <- [[Rule nonterminal <- name]]
-    
-    abort("TODO: Unreachable")
-    return <- [[Rule]]
-
-
-[macro_function]
 def into_rule_(var expr: ExpressionPtr): Rule_?
     if expr is ExprAsVariant && (expr as ExprAsVariant).value is ExprVar
         // Bound terminal
@@ -118,6 +83,7 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
     return <- new [[Rule_]]
 
 
+[macro_function]
 def transform(var rule: MacroRule): Definition
     unsafe
         var name = rule.rule.variables[0].name |> string()
@@ -178,7 +144,7 @@ class ParseMacro : AstCallMacro
 
     def override canVisitArgument ( expr:smart_ptr<ExprCallMacro>; argIndex:int ) : bool
         // if we are reporting errors, and macro did not fold - no point showing errors inside match - there will be too many, and they are meaningless
-        return !is_reporting_compilation_errors()
+        return false
 
     def override canFoldReturnResult ( expr:smart_ptr<ExprCallMacro> ) : bool
         return false
@@ -194,7 +160,7 @@ class ParseMacro : AstCallMacro
         var t2 := blk as ExprMakeBlock
 
         // macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
-        macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
+        //macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
         macro_verify(blk is ExprMakeBlock, prog, expr.at, "match `block` argument must be immediate block declaration")
         
         var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
@@ -231,7 +197,10 @@ class ParseMacro : AstCallMacro
         for rule in gram 
             gen |> generate(rule)
 
-        return <- qmacro_expr($ {1;}) // Just return something
+            
+        breakpoint()
+
+        return <- qmacro_expr($ { return 1; }) // Just return something
 
 
 [_macro]

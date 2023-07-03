@@ -6,6 +6,7 @@ require parser_generator public
 require strings
 require daslib/strings_boost
 
+options debugger
 require daslib/debug
 
 require parse_macro
@@ -65,33 +66,35 @@ def main
 
     var parser <- [[Parser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
-    
+    let calc: int
+
     parse calc
-        let add: int
+        // let add: int
 
-        rule(add as a, "+", mul as m) <|
-            return 1 + 2
-        rule(add as a, "-", mul as m) <|
-            return a - m
-        rule(mul as m) <|
-            return m
+        // rule(add as a, "+", mul as m) <|
+        //     return 1 + 2
+        // rule(add as a, "-", mul as m) <|
+        //     return a - m
+        // rule(mul as m) <|
+        //     return m
 
-        let mul: int
+        // let mul: int
 
-        rule(mul as m, "*", prim as p) <|
-            return m * p 
-        rule(mul as m, "/", prim as p) <|
-            return m / p 
-        rule(prim as p) <|
-            return p 
+        // rule(mul as m, "*", prim as p) <|
+        //     return m * p 
+        // rule(mul as m, "/", prim as p) <|
+        //     return m / p 
+        // rule(prim as p) <|
+        //     return p 
 
         let prim: int
         
-        rule("(", add as a, ")") <|
-            return a
-        rule(number as n) <| 
-            return n
+        // rule("(", add as a, ")") <|
+        //     return a
 
-    var res <- parser |> parse_add
+        rule(number) <| 
+            return 1
+
+    var res <- parser |> parse_prim
 
     print("{res.value} == -6 ?\n")

@@ -14,6 +14,24 @@ require daslib/templates_boost
 //  definition. Thus Rule_ wraps it in a struct, which is strong  
 
 
+
+variant Terminal
+    // Literal: "Hello world"
+    lit: string 
+
+    // Range: [0-9]
+    range_: tuple<int; int> 
+
+    // Name of the result (int)
+    number: string
+
+    // WS <- [' ', '\n', '\t']*
+    whitespace: void? 
+
+
+typedef Nonterminal = string;
+
+
 variant Rule
     seq: array<Rule_?>   // R1 R2 R3
     alt: array<Alternative>   // R1 | R2 | R3
@@ -45,49 +63,6 @@ struct Definition
     type_: TypeDeclPtr
 
     rule: Rule
-    
-
-def abort(message: string)
-    print("{message}\n")
-    unsafe { exit(1); }
-      
-
-def iota
-    return <- generator<int>() <| 
-        var i: int = 0
-        while true
-            i += 1
-            return false if i == 0 else yield i
-
-
-
-struct ParserGenerator
-    // Provides information to generate unique names
-    rule_counter: table<string; int>
-
-    // Maps rule name into its declared type
-    rule_types: table<string; TypeDeclPtr>
-
-    // Currently generating code for 'rule'
-    // For use in actions.
-    current_rule: string
-
-
-variant Terminal
-    // Literal: "Hello world"
-    lit: string 
-
-    // Range: [0-9]
-    range_: tuple<int; int> 
-
-    // Name of the result (int)
-    number: string
-
-    // WS <- [' ', '\n', '\t']*
-    whitespace: void? 
-
-
-typedef Nonterminal = string;
 
 
 struct Alternative

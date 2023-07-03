@@ -13,6 +13,33 @@ require meta_ast
 require gram
 
 
+
+struct ParserGenerator
+    // Provides information to generate unique names
+    rule_counter: table<string; int>
+
+    // Maps rule name into its declared type
+    rule_types: table<string; TypeDeclPtr>
+
+    // Currently generating code for 'rule'
+    // For use in actions.
+    current_rule: string
+
+
+def abort(message: string)
+    print("{message}\n")
+    unsafe { exit(1); }
+      
+
+def iota
+    return <- generator<int>() <| 
+        var i: int = 0
+        while true
+            i += 1
+            return false if i == 0 else yield i
+
+
+
 def rule_left_recursive(name: string; rule: Rule): bool
     match rule
         if [[Rule alt = $v(alts)]] 
@@ -134,7 +161,7 @@ def generate(var gen: ParserGenerator; def_: Definition)
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule
         if [[Rule nonterminal = $v(nonterm)]]
-            return <- gen.rule_types[nonterm]
+            return gen.rule_types[nonterm]
 
         if [[Rule subrule = $v(subrule)]]
             abort("Infer subrule type")
@@ -142,7 +169,7 @@ def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     return [[TypeDeclPtr]]
 
 def set_rule_type(var gen: ParserGenerator; rule_name: string; var type_: TypeDeclPtr)
-    gen.rule_types[rule_name] <- type_
+    gen.rule_types[rule_name] := type_
 
 
 def get_action_block(var alternative: Alternative): ExpressionPtr

@@ -13,7 +13,6 @@ def rule_append(var seq: Rule; var new_: Rule): Rule
             rules |> push (r)
             return <- seq
 
-    abort("Unreachable")
     return <- seq
 
 
@@ -25,7 +24,6 @@ def rule_append_with(var seq: Rule; var new_: Rule; var act: ExpressionPtr): Rul
             alts |> emplace ([[Alternative rule <- r, action <- act]])
             return <- seq
 
-    abort("Unreachable")
     return <- seq
 
 
