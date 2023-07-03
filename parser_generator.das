@@ -7,17 +7,15 @@ options strict_smart_pointers = true
 module parser_generator
 
 require daslib/match public
+require daslib/ast
 require daslib/fio
 require daslib/rtti
-require daslib/ast
 require daslib/ast_boost
 require daslib/templates_boost
 
 //options log_infer_passes
 
 require meta_ast
-require gram
-
 
 
 struct ParserGenerator
