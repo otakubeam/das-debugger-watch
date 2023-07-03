@@ -78,8 +78,8 @@ def generate_wrapper(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
     let inner_parsing_fun = "parse_{rule_name}_inner"
-
-    var inscope t <- qmacro_block <|
+    
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
         var mark = parser |> mark
         
         with parser 
@@ -90,13 +90,9 @@ def generate_wrapper(var gen: ParserGenerator)
                 return result
 
             var result = $c(inner_parsing_fun)(parser)
-            // var endpos = parser |> mark
             $i(cache_table)[mark] = result
 
             return result
-    
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
-        $b([{auto[] t}])
 
     return <- wrapper_fun    
 
@@ -105,7 +101,7 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
     let cache_table = "{rule_name}_cache"
     let inner_parsing_fun = "parse_{rule_name}_inner"    
 
-    var inscope t <- qmacro_block <|
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
         var mark = parser |> mark
         
         with parser 
@@ -136,11 +132,9 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
 
             parser |> reset(res.endpos)
             return res
-    
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): Result
-        $b([{auto[] t}])
 
     return <- wrapper_fun
+
 
 def generate(var gen: ParserGenerator; var def_: Definition)
     gen.current_rule = def_.name
@@ -164,7 +158,8 @@ def generate(var gen: ParserGenerator; var def_: Definition)
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule
         if [[Rule nonterminal = $v(nonterm)]]
-            return <- gen.rule_types[nonterm]
+            var inscope type_ := gen.rule_types[nonterm]
+            return <- type_
 
         if [[Rule subrule = $v(subrule)]]
             abort("Infer subrule type")
@@ -172,8 +167,11 @@ def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     return <- [[TypeDeclPtr]]
 
 
-def set_rule_type(var gen: ParserGenerator; rule_name: string; var type_: TypeDeclPtr)
-    gen.rule_types[rule_name] |> move <| type_
+def set_rule_type(var gen: ParserGenerator; rule_name: string; type_: TypeDeclPtr)
+    if !type_ |> smart_ptr_is_valid
+        breakpoint()
+
+    gen.rule_types[rule_name] |> move_new(type_ |> clone_type)
 
 
 def get_action_block(var alternative: Alternative): ExpressionPtr
@@ -276,7 +274,7 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
                         parser |> reset(parse_pos)
                     
-                    results |> emplace_new <| alternative_code 
+                    results |> emplace <| alternative_code 
             
             return <- results
 

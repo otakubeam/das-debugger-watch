@@ -2,7 +2,7 @@ options indenting = 4
 options no_unused_block_arguments = false
 options no_unused_function_arguments = false
 options no_aot = true
-options strict_smart_pointers = true
+// options strict_smart_pointers = true
 
 module parse_macro
 
@@ -19,7 +19,7 @@ require meta_ast
 
 
 struct MacroRule
-    rule: ExprLet? // from let rule: type
+    [[do_not_delete]] rule: ExprLet? // from let rule: type
     alternatives: array<ExprCall?>
 
 
@@ -95,7 +95,7 @@ def transform(var rule: MacroRule): Definition
 
     var inscope alternatives: array<Alternative>
     
-    for alt in rule.alternatives
+    for alt in rule.alternatives                 // alt: ExprCall?
         if true // creates scope for inscope
             var inscope blk: ExpressionPtr <- alt.arguments |> back
             alt.arguments |> pop
@@ -151,56 +151,53 @@ class ParseMacro : AstCallMacro
     def override canFoldReturnResult ( expr:smart_ptr<ExprCallMacro> ) : bool
         return false
 
-    def override preVisit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : void
-        return 
-
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
-        macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
+        // macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
         
-        assume blk = expr.arguments[1]
+        // assume blk = expr.arguments[1]
         
-        var t2 := blk as ExprMakeBlock
+        // var t2 = blk as ExprMakeBlock
 
-        // macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
-        //macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
-        macro_verify(blk is ExprMakeBlock, prog, expr.at, "match `block` argument must be immediate block declaration")
+        // // macro_verify(what._type != null && !what._type.isAutoOrAlias, prog, expr.at, "match `what` argument did not resolve")
+        // //macro_verify(blk._type.isGoodBlockType, prog, expr.at, "match `block` argument did not resolve")
+        // macro_verify(blk is ExprMakeBlock, prog, expr.at, "match `block` argument must be immediate block declaration")
         
-        var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
+        // var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
 
-        macro_verify(length(expression_block.finalList) == 0, prog, expr.at, "match `block` argument can't have finally section")
-        macro_verify(expression_block.list[0] is ExprLet, prog, expr.at, "parse `block` argument should begin with let expression")
+        // macro_verify(length(expression_block.finalList) == 0, prog, expr.at, "match `block` argument can't have finally section")
+        // macro_verify(expression_block.list[0] is ExprLet, prog, expr.at, "parse `block` argument should begin with let expression")
         
-        // Collect
+        // // Collect
         
-        var rules_: array<MacroRule>
+        // var rules_: array<MacroRule>
         
-        for list_expr in expression_block.list
-            if list_expr is ExprLet
-                rules_ |> emplace <| [[MacroRule rule = list_expr as ExprLet]]
-            elif list_expr is ExprCall
-                rules_ |> add_alternative(list_expr as ExprCall, prog)
-            else 
-                macro_verify(false, prog, list_expr.at, "expressions in the parse block should be either let or call")
+        // for list_expr in expression_block.list
+        //     if list_expr is ExprLet
+        //         rules_ |> emplace <| [[MacroRule rule = list_expr as ExprLet]]
+        //     elif list_expr is ExprCall
+        //         rules_ |> add_alternative(list_expr as ExprCall, prog)
+        //     else 
+        //         macro_verify(false, prog, list_expr.at, "expressions in the parse block should be either let or call")
 
-        // Transform
+        // // Transform
         
-        var inscope gram: array<Definition>
+        // var inscope gram: array<Definition>
 
-        for mrule in rules_
-            gram |> emplace(mrule |> transform)
+        // for mrule in rules_
+        //     gram |> emplace(mrule |> transform)
 
-        // Generate
+        // // Generate
 
-        var inscope gen <- [[ParserGenerator]]
+        var inscope gen <- new [[ParserGenerator]]
 
-        for rule in gram
-            gen |> set_rule_type(rule.name |> string(), rule.type_)
+        //for rule in gram
+          //  gen |> set_rule_type(rule.name |> string(), rule.type_)
         
-        for rule in gram 
-            gen |> generate(rule)
+        // for rule in gram 
+        //     gen |> generate(rule)
 
             
-        return <- qmacro_expr($ { return 1; }) // Just return something
+        return <- [[ExpressionPtr]] // Just return something
 
 
 [_macro]

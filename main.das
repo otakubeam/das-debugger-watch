@@ -72,6 +72,8 @@ def main
     var parser <- [[Parser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
 
+    return
+
     parse calc
         // let add: int
 
@@ -96,7 +98,7 @@ def main
         // rule("(", add as a, ")") <|
         //     return a
 
-        rule(number) <| 
-            return 1
+        // rule(number) <| 
+        //     return 1
 
-    var res <- parser |> parse_prim
+    // var res <- parser |> parse_prim
