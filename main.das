@@ -1,7 +1,12 @@
+options indenting = 4
+options no_unused_block_arguments = false
+options no_unused_function_arguments = false
+options no_aot = true
+options strict_smart_pointers = true
 
 require parser_generator public
 
-//options log_infer_passes
+// options log_infer_passes
 
 require strings
 require daslib/strings_boost
@@ -66,7 +71,6 @@ def main
 
     var parser <- [[Parser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
-    let calc: int
 
     parse calc
         // let add: int
@@ -96,5 +100,3 @@ def main
             return 1
 
     var res <- parser |> parse_prim
-
-    print("{res.value} == -6 ?\n")

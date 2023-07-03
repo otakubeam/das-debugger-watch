@@ -17,6 +17,7 @@ require daslib/debug
 require parser_generator
 require meta_ast
 
+
 struct MacroRule
     rule: ExprLet? // from let rule: type
     alternatives: array<ExprCall?>
@@ -74,7 +75,9 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
     
     elif expr is ExprConstString
         var const_string <- expr as ExprConstString
-        return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal lit = const_string.value |> string()]]]]]]
+        return <- new [[Rule_ rule <- 
+                        [[Rule terminal <- 
+                          [[Terminal lit = const_string.value |> string()]]]]]]
    
     elif expr is ExprConstInt
         abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
@@ -85,31 +88,30 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
 [macro_function]
 def transform(var rule: MacroRule): Definition
-    unsafe
-        var name = rule.rule.variables[0].name |> string()
-        var inscope type_ <- rule.rule.variables[0]._type
+    var name = rule.rule.variables[0].name |> string()
+    var inscope type_ <- rule.rule.variables[0]._type
 
-        // Transform array<ExprCall?> into an array of Rules
+    // Transform array<ExprCall?> into an array of Rules
 
-        var inscope alternatives: array<Alternative>
-        
-        for alt in rule.alternatives
-
-            var blk: ExpressionPtr <- alt.arguments |> back
+    var inscope alternatives: array<Alternative>
+    
+    for alt in rule.alternatives
+        if true // creates scope for inscope
+            var inscope blk: ExpressionPtr <- alt.arguments |> back
             alt.arguments |> pop
             
             var sequence: array<Rule_?>
 
             for sequence_elem in alt.arguments
                 sequence |> push <| into_rule_(sequence_elem)
-        
+    
             alternatives |> emplace <| [[Alternative 
                                       rule <- new [[Rule_ rule <- [[Rule seq <- sequence]]]], 
                                       action <- (blk as ExprMakeBlock)._block]]
-        
-        return <- [[Definition name = "{name}", 
-                    type_ <- type_, 
-                    rule <- [[Rule alt <- alternatives]] ]]
+    
+    return <- [[Definition name = "{name}", 
+                type_ <- type_, 
+                rule <- [[Rule alt <- alternatives]]]]
 
 
 [call_macro(name="parse")]
@@ -198,8 +200,6 @@ class ParseMacro : AstCallMacro
             gen |> generate(rule)
 
             
-        breakpoint()
-
         return <- qmacro_expr($ { return 1; }) // Just return something
 
 

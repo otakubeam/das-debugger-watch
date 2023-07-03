@@ -1,3 +1,9 @@
+options indenting = 4
+options no_unused_block_arguments = false
+options no_unused_function_arguments = false
+options no_aot = true
+options strict_smart_pointers = true
+
 module meta_ast
 
 require daslib/match public
@@ -12,7 +18,6 @@ require daslib/templates_boost
 //  Since variant (like tuple) is a weak type
 //  you cannot reference variant Rule directly in Rule
 //  definition. Thus Rule_ wraps it in a struct, which is strong  
-
 
 
 variant Terminal
