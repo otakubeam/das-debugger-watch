@@ -106,4 +106,5 @@ def main
             return n
 
     var res <- parser |> parse_add
-    print("{res.value}\n")
+
+    print("Assert {res.value} == -6\n")

@@ -1,0 +1,203 @@
+options indenting = 4
+options no_unused_block_arguments = false
+options no_unused_function_arguments = false
+options no_aot = true
+options strict_smart_pointers = true
+
+require parser_generator public
+
+require strings
+require daslib/strings_boost
+
+options debugger
+require daslib/debug
+
+require parse_macro
+
+// Taken from daslib/json
+
+variant JsValue
+    //! Single JSON element.
+    _object : table<string; JsonValue?>
+    _array  : array<JsonValue?>
+    _string : string
+    _number : double
+    _bool   : bool
+    _null   : void?
+
+struct JsonValue
+    //! JSON value, wraps any JSON element.
+    value : JsValue
+
+
+
+// Grammar:
+//
+// # A JSON text is a sequence of whitespace followed by an element
+// Json <- Spacing Element EOF
+//
+// # An element is an object, an array or a value
+// Element <- Object / Array / Value
+//
+// # A JSON object is an unordered set of name/value pairs
+// Object <- '{' Spacing Pair (',' Spacing Pair)* '}' Spacing
+//
+// Pair <- String ':' Spacing Element
+//
+// # A JSON array is an ordered collection of values
+// Array <- '[' Spacing Element (',' Spacing Element)* ']' Spacing
+//
+// # A JSON value can be a string, number, "true", "false", or "null"
+// Value <- String / Number / 'true' Spacing / 'false' Spacing / 'null' Spacing
+//
+// # JSON strings are surrounded by double quotes and support a backslash escaping syntax
+// String <- '"' (!'"' Character)* '"' Spacing
+// Character <- '\\' Escape / !'\\' .
+//
+// Escape <- ["\\/bfnrt] / 'u' [0-9A-Fa-f]{4}
+//
+
+
+// Creation helpers
+
+
+def JV ( v : string )
+    //! Creates `JsonValue` out of value.
+    return new [[JsonValue value <- [[JsValue _string = v]]]]
+
+def JV ( v : double )
+    return new [[JsonValue value <- [[JsValue _number = v]]]]
+
+def JV ( v : bool )
+    return new [[JsonValue value <- [[JsValue _bool = v]]]]
+
+def JVNull
+    //! Creates `JsonValue` representing `null`.
+    return new [[JsonValue value <- [[JsValue _null = null]]]]
+
+def JV ( var v : table<string;JsonValue?> )
+    return new [[JsonValue value <- [[JsValue _object <- v]]]]
+
+def JV ( var v : array<JsonValue?> )
+    return new [[JsonValue value <- [[JsValue _array <- v]]]]
+
+
+def into_table(var src: array<tuple<auto(K), auto(V)>>): table<K; V>
+    var result: table<K; V>
+    for elem in src
+        result[elem._0] <- elem._1
+    return <- result
+
+
+// Parsing specification
+
+
+def parse_json -> JsonValue
+
+    parse json
+        let JsonValue: JsonValue
+
+        rule(WS, Element as e, EOF) <|
+            return e
+
+
+
+        let Element: JsonValue?
+            
+        rule(Array as a) <|
+            return JV(a)
+
+        rule(Object as o) <|
+            return JV(o)
+
+        rule(Value as v) <|
+            return v
+
+
+
+
+
+        let Array: array<JsonValue?>
+
+        // Optional element list;
+        // If items are present (not []), then no trailing comma is allowed
+
+        rule("[", WS, ?ElementList as list, "]", WS) <|
+            return <- [{array<JsonValue?>}] if list |> empty
+            return <- list[0] // Take the value from optional
+
+
+        let ElementList: array<JsonValue?>
+
+        // Multiple (possibly none) comma-separated elements followed by the final one
+        // If the list is not empty, there must always be a final one
+
+        rule(*CommaSeparatedElements as els, Element as last) <|
+            els |> push <| last
+            return <- els
+
+
+        let CommaSeparatedElements: JsonValue?
+
+        // Helper to shave off commas
+
+        rule(Element as e, WS, ",", WS) <|
+            return e
+
+
+
+
+        let Object: table<string; JsonValue?>
+
+        rule("\{", WS, ?MappingList as list, "\}", WS) <|
+            return <- {{table<string; JsonValue?>}} if list |> empty
+            return <- list[0] |> into_table
+        
+
+
+        let MappingList: array<tuple<string; JsonValue?>>
+
+        // Multiple (possibly none) comma-separated elements followed by the final one
+        // If the list is not empty, there must always be a final one
+
+        rule(*CommaSeparatedMappings as els, Mapping as last) <|
+            els |> push <| last
+            return <- els
+
+
+        let CommaSeparatedMappings: tuple<string; JsonValue?>
+
+        rule(Mapping as m, ",", WS) <|
+            return m
+
+
+        let Mapping: tuple<string; JsonValue?>
+
+        rule(stirng_ as s, WS, ":", WS, Element as e) <|
+            return [[auto s, e]]
+
+
+
+
+
+
+        let Value: JsonValue?
+
+        rule("true", WS) <|
+            return JV(true)
+
+        rule("false", WS) <|
+            return JV(false)
+
+        rule("null", WS) <|
+            return JVNull()
+            
+        rule(double_ as d, WS) <|  // <- builtin double_ rule
+            return JV(d)
+
+        rule(string_ as s, WS) <|  // <- builtin string_ rule
+            return JV(s)
+
+
+let parsed_json = json("{ \"key\": \"value\" }")
+
