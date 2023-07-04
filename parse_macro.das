@@ -82,7 +82,19 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
         return <- new [[Rule_ rule <- 
                         [[Rule terminal <- 
                           [[Terminal lit = const_string.value |> string()]]]]]]
-   
+    
+    elif expr is ExprPtr2Ref
+        var subrule = (expr as ExprPtr2Ref).subexpr |> into_rule_
+        return <- new [[Rule_ rule <- [[Rule maybe_repeat <- subrule ]]]]
+
+    elif expr is ExprCall && (expr as ExprCall).name == "MB"
+        var subrule = (expr as ExprCall).arguments[0] |> into_rule_
+        return <- new [[Rule_ rule <- [[Rule optional <- subrule ]]]]
+
+    elif expr is ExprOp1 && (expr as ExprOp1).op == '+'
+        var subrule = (expr as ExprCall).arguments[0] |> into_rule_
+        return <- new [[Rule_ rule <- [[Rule repeat <- subrule ]]]]
+
     elif expr is ExprConstInt
         abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
 

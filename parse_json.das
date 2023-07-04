@@ -154,11 +154,7 @@ def parse_json -> JsonValue
             return <- list[0] |> into_table
         
 
-
         let MappingList: array<tuple<string; JsonValue?>>
-
-        // Multiple (possibly none) comma-separated elements followed by the final one
-        // If the list is not empty, there must always be a final one
 
         rule(*CommaSeparatedMappings as els, Mapping as last) <|
             els |> push <| last
