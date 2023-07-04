@@ -50,6 +50,10 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
         var as_expr <- expr as ExprAsVariant
         var bound_name <- as_expr.name |> string()
         var bound_rule <- (as_expr.value as ExprVar).name |> string()
+
+        if bound_rule == "number"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal number = bound_name]]]]]]
+
         return <- new [[Rule_ rule <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]]]
 
     elif expr is ExprAsVariant
