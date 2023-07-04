@@ -84,13 +84,12 @@ def main
 
         let mul: int
 
-        rule(mul as m, "*", prim as p) <|
-            return m * p 
-        rule(mul as m, "/", prim as p) <|
-            return m / p 
-        rule(prim as p) <|
-            return p 
-
+        rule(mul as m, "*", unary as u) <|
+            return m * u 
+        rule(mul as m, "/", unary as u) <|
+            return m / u 
+        rule(unary as u) <|
+            return u 
 
         let unary: int
         
