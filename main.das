@@ -33,6 +33,8 @@ def get_current_char(var parser: Parser): int
 
 
 def lex_number(var parser: Parser): Result
+    //! Simple lexing of decimal integers, doen't check for overflow
+
     return [[Result]] if !parser |> get_current_char |> is_number
     
     var result = 0
@@ -46,9 +48,7 @@ def lex_number(var parser: Parser): Result
 
 
 def skip_whitespace(var parser: Parser)
-    while true
-        var ch = parser |> get_current_char
-        return if !ch |> is_white_space
+    while parser |> get_current_char |> is_white_space
         parser |> move(1)
 
 
@@ -78,7 +78,7 @@ def match_string_literal(var parser: Parser): tuple<success:bool; string>
     return [[auto true, buffer |> string()]]
 
 
-def match_double_literal(var parser: Parser): tuple<success:bool, double>
+def match_double_literal(var parser: Parser): tuple<success:bool; double>
     //! Matches doubles in the form of [-+]? [0-9]* .? [0-9]+ ([eE] [-+]? [0-9]+)?
     //! The number is not checked to be representable as defined in IEEE-754
 
