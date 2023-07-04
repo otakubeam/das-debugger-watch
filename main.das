@@ -45,6 +45,79 @@ def lex_number(var parser: Parser): Result
     return [[Result true, result, parser |> mark]]
 
 
+def skip_whitespace(var parser: Parser)
+    while true
+        var ch = parser |> get_current_char
+        return if !ch |> is_white_space
+        parser |> move(1)
+
+
+def match_string_literal(var parser: Parser): tuple<success:bool; string>
+    //! Tries to match everything inside ""
+
+    // Define buffer to store string literal characters
+    var inscope buffer: das_string
+
+    var current_char = parser |> get_current_char
+
+    // If the current character is not a double quote, the rule is not a string
+    return [[auto false, ""]] if current_char != '"'
+    
+    parser |> move(1)
+    current_char = parser |> get_current_char
+
+    while current_char != '"' && current_char != -1
+        buffer |> append(current_char)
+        parser |> move(1)
+        current_char = parser |> get_current_char
+
+    // If we've reached EOF file without finding a closing quote
+    return [[auto false, ""]] if current_char == -1
+
+    parser |> move(1)
+    return [[auto true, buffer |> string()]]
+
+
+def match_double_literal(var parser: Parser): tuple<success:bool, double>
+    //! Matches doubles in the form of [-+]? [0-9]* .? [0-9]+ ([eE] [-+]? [0-9]+)?
+    //! The number is not checked to be representable as defined in IEEE-754
+
+    var inscope buffer: das_string
+    var current_char = parser |> get_current_char
+
+    if current_char == '-' || current_char == '+'
+        buffer |> append(current_char)
+        parser |> move(1)
+        current_char = parser |> get_current_char
+
+    // Add everything up to '.' to the buffer
+    while current_char |> is_number || current_char == '.'
+        buffer |> append(current_char)
+        parser |> move(1)
+        current_char = parser |> get_current_char
+    
+
+    // Match exponent part
+    if current_char == 'e' || current_char == 'E'
+        buffer |> append(current_char)
+        parser |> move(1)
+        current_char = parser |> get_current_char
+
+        // Check for '-' or '+' after 'e' or 'E'
+        if current_char == '-' || current_char == '+'
+            buffer |> append(current_char)
+            parser |> move(1)
+            current_char = parser |> get_current_char
+
+        // Continue appending digits after 'e' or 'E'
+        while current_char |> is_number
+            buffer |> append(current_char)
+            parser |> move(1)
+            current_char = parser |> get_current_char
+ 
+    return [[auto true, buffer |> string() |> double()]]
+
+
 def mark(parser: Parser): int
     return parser.index
 
@@ -60,6 +133,10 @@ def matches(var parser: Parser; template_: string): bool
             return false
         parser |> move(template_ |> length)
         return true
+
+
+def reached_EOF(var parser: Parser): bool 
+    return parser |> get_current_char != -1
 
 
 def move(var parser: Parser; offset : int) 
