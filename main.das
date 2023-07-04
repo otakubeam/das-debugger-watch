@@ -18,7 +18,7 @@ require parse_macro
 
 
 struct Parser
-    primary_cache: table<int; Result>
+    prim_cache: table<int; Result>
     unary_cache: table<int; Result>
     mul_cache: table<int; Result>
     add_cache: table<int; Result>
@@ -72,33 +72,39 @@ def main
     var parser <- [[Parser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
 
-    return
-
     parse calc
-        // let add: int
+        let add: int
 
-        // rule(add as a, "+", mul as m) <|
-        //     return 1 + 2
-        // rule(add as a, "-", mul as m) <|
-        //     return a - m
-        // rule(mul as m) <|
-        //     return m
+        rule(add as a, "+", mul as m) <|
+            return a + m
+        rule(add as a, "-", mul as m) <|
+            return a - m
+        rule(mul as m) <|
+            return m
 
-        // let mul: int
+        let mul: int
 
-        // rule(mul as m, "*", prim as p) <|
-        //     return m * p 
-        // rule(mul as m, "/", prim as p) <|
-        //     return m / p 
-        // rule(prim as p) <|
-        //     return p 
+        rule(mul as m, "*", prim as p) <|
+            return m * p 
+        rule(mul as m, "/", prim as p) <|
+            return m / p 
+        rule(prim as p) <|
+            return p 
+
+
+        let unary: int
+        
+        rule("-", unary as u) <|
+            return u 
+        rule(prim as p) <|
+            return p 
 
         let prim: int
         
-        // rule("(", add as a, ")") <|
-        //     return a
+        rule("(", add as a, ")") <|
+            return a
+        rule(number as n) <| 
+            return n
 
-        // rule(number) <| 
-        //     return 1
-
-    // var res <- parser |> parse_prim
+    var res <- parser |> parse_add
+    print("{res.value}\n")
