@@ -33,6 +33,12 @@ variant Terminal
     // WS <- [' ', '\n', '\t']*
     whitespace: void? 
 
+    // "..." as <name>
+    string_: string
+
+    // double_ as <name>
+    double_: string
+    
 
 typedef Nonterminal = string;
 
