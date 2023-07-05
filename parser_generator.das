@@ -13,7 +13,7 @@ require daslib/rtti
 require daslib/ast_boost
 require daslib/templates_boost
 
-//options log_infer_passes
+// options log_infer_passes
 
 require meta_ast
 
@@ -80,9 +80,10 @@ def generate_wrapper(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
     let inner_parsing_fun = "parse_{rule_name}_inner"
-    let result_type = "Result{gen.result_types[rule.name]}"
+
+    var inscope return_type <- gen.return_types[rule_name]
     
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(result_type)
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(return_type)
         var mark = parser |> mark
         
         with parser 
@@ -103,9 +104,10 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
     let rule_name = gen.current_rule
     let cache_table = "{rule_name}_cache"
     let inner_parsing_fun = "parse_{rule_name}_inner"
-    let result_type = "Result{gen.result_types[rule.name]}"
 
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(result_type)
+    var inscope return_type <- gen.return_types[rule_name]
+
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(return_type)
         var mark = parser |> mark
         
         with parser 
@@ -168,7 +170,7 @@ def make_default_type_decl: TypeDeclPtr
     return <- typeinfo(ast_typedecl type<tuple<success:bool; value:int; endpos:int>>)
 
 
-def generate_result_types(var gen: ParserGenerator; name: string)
+def generate_result_types(var gen: ParserGenerator)
     //! Result types are used internally in the compiler to store in the cache.
     //!
     //! Manually they would be defined like so:
@@ -188,12 +190,12 @@ def generate_result_types(var gen: ParserGenerator; name: string)
 def generate(var gen: ParserGenerator; var def_: Definition)
     gen.current_rule = def_.name
 
-    let result_type = "Result{def_.name}"
     var inscope function_body <- gen |> generate(def_.rule)
+    var inscope return_type <- gen.return_types[def_.name]
     
-    var inscope fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): $t(result_type)
+    var inscope fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): $t(return_type)
         $b(function_body)
-        return <- [[$t(result_type)]]
+        return <- [[$t(return_type)]]
 
     compiling_module() |> add_function(fun)
 
@@ -203,7 +205,15 @@ def generate(var gen: ParserGenerator; var def_: Definition)
     else
         var inscope wrapper <- gen |> generate_wrapper
         compiling_module() |> add_function(wrapper)
-    
+
+
+def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name: string)
+    gen |> generate_parser_class(name)
+    gen |> generate_result_types
+
+    for def_ in gram
+        gen |> generate(def_)
+        
 
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule
@@ -240,7 +250,9 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
         if [[Rule nonterminal = $v(nonterm)]]
             let name = nonterm
             let count = "{gen.rule_counter[name]}"
-            let return_type := gen.result_types[name]
+
+            // Type of the function that we are now generating code for
+            var inscope return_type := gen.return_types[gen.current_rule]
 
             // varname is a generic name for unnamed nonterminals
             // e.g. add4, add5, mul0
@@ -257,12 +269,10 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
         if [[Rule bound_nonterminal = $v(nonterm)]]
             let name = nonterm._0
             let result_name = nonterm._1
-            let count = "{gen.rule_counter[name]}"
             
-            let return_type := gen.result_types[gen.current_rule]
+            var inscope return_type := gen.return_types[gen.current_rule]
 
-            // varname is a generic name for unnamed nonterminals
-            // e.g. add4, add5, mul0
+            let count = "{gen.rule_counter[name]}"
             let varname = "{name}{count}"
             let parse_fun = "parse_{name}"
 
@@ -287,47 +297,8 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             var inscope results: array<ExpressionPtr>
 
-            for alt, i in alts, iota()
-
-                if true 
-
-                    let block_name = "blk{i}"
-                    let parse_pos = "pos{i}"
-                    let result  = "res{i}"
-
-                    var inscope action <- alt.action
-                    var inscope action_block <- action as ExprBlock |> flatten_block
-                    var inscope block_contents <- gen |> generate(alt.rule.rule)
-
-                    var inscope action_type := gen.rule_types[current_rule]
-                    let return_type := gen.result_types[gen.current_rule]
-
-                    var inscope t <- qmacro_block <|
-                        let val <- invoke <| $(): $t(action_type)
-                            $b(action_block)
-
-                        // For some reason I cannot directly return [[Result]]
-                        var result = [[$t(return_type) true, val, parser |> mark]]
-                        return result
-
-                    for e in flatten_block(t as ExprBlock)
-                        block_contents |> emplace <| e
-                    
-                    // Add next alternative
-
-                    var inscope alternative_code <- qmacro_block <|
-                        var parse_pos <- parser |> mark
-
-                        var $i(block_name) <- $ <|
-                            $b(block_contents)
-
-                        var $i(result) <- $i(block_name) |> invoke()
-
-                        return $i(result) if $i(result).success
-
-                        parser |> reset(parse_pos)
-                    
-                    results |> emplace <| alternative_code 
+            for alt, i in alts, iota() 
+                results |> emplace_new <| generate_one_alternative(gen, alt, i) 
             
             return <- results
 
@@ -343,12 +314,14 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
                     while true
                         var res <- invoke($b(rule_code))
                         break if !res.success
+
                 return <- flatten_block(t as ExprBlock)
 
 	        // Bind result to the provided name 
 
             var inscope t <- qmacro_block <|
                 var $i(result_handle) : array<$t(type_decl)>
+
                 while true
                     var res <- invoke($b(rule_code))
                     break if !res.success
@@ -358,36 +331,83 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
         if [[Rule repeat = $v(rule_)]]
 
+            var result_handle = rule_.name
             var inscope rule_code <- gen |> generate(rule_.rule)
+            var inscope type_decl <- gen |> get_rule_type(rule_.rule)
+            var inscope return_type := gen.return_types[gen.current_rule]
 
-            var inscope t <- qmacro_block <|
+            if rule_.name == "" // Rule not bound by name, discard result   
+                var inscope t <- qmacro_block <|
+
+                    var res <- invoke($b(rule_code))
+                    return [[$t(return_type)]] if !res.success
+
+                    while true
+                        var res <- invoke($b(rule_code))
+                        break if !res.success
+
+                return <- flatten_block(t as ExprBlock)
             
-                var res <- invoke <| $
-                    $b(rule_code)
-                return if !res.success
-
-                while true
-                    var res <- invoke <| $
-                        $b(rule_code)
-                    break if !res.success
-
-            return <- flatten_block(t as ExprBlock)
+            abort("TODO: Rule repeat bound")
 
         if [[Rule subrule = $v(subrule)]]
             // Create a new unnamed subrule for the (...)
-            
+            var inscope return_type := gen.return_types[gen.current_rule]
             var inscope rule_code <- gen |> generate(subrule.rule)
 
             var inscope t <- qmacro_block <|
-                var result <- invoke <| 
-                    $b(rule_code)
-                return [[Result]] if !result.success
+                var res <- invoke($b(rule_code))
+                return [[$t(return_type)]] if !res.success
 
             return <- flatten_block(t as ExprBlock)
 
     abort("Unreachable")
     return <- [[array<ExpressionPtr>]]
 
+
+def generate_one_alternative(var gen: ParserGenerator; var alt: Alternative; var i)
+    let block_name = "blk{i}"
+    let parse_pos = "pos{i}"
+    let result  = "res{i}"
+
+    var inscope action <- alt.action
+    var inscope action_block <- action as ExprBlock |> flatten_block
+    var inscope block_contents <- gen |> generate(alt.rule.rule)
+
+    // Add epilogue (code that executes the associated action)
+
+    block_contents |> alternative_add_epilogue(gen, action_block)
+
+    // Generate the alternative
+
+    return <- qmacro_block <|
+        var parse_pos <- parser |> mark
+
+        var $i(block_name) <- $ <|
+            $b(block_contents)
+
+        var $i(result) <- $i(block_name) |> invoke()
+
+        return $i(result) if $i(result).success
+
+        parser |> reset(parse_pos)
+
+
+def alternative_add_epilogue(var block_contents: array<ExpressionPtr>; var gen: ParserGenerator; var action_block)
+    var inscope action_type := gen.rule_types[gen.current_rule]
+    var inscope return_type := gen.return_types[gen.current_rule]
+
+    var inscope t <- qmacro_block <|
+        let val <- invoke <| $(): $t(action_type)
+            $b(action_block)
+
+        // For some reason I cannot directly return [[Result]]
+        var result = [[$t(return_type) true, val, parser |> mark]]
+        return result
+
+    for e in flatten_block(t as ExprBlock)
+        block_contents |> emplace <| e
+    
 
 def generate(terminal: Terminal): ExpressionPtr
     match terminal 
