@@ -211,9 +211,12 @@ def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name
     gen |> generate_parser_class(name)
     gen |> generate_result_types
 
+    for rule in gram
+        gen |> set_rule_type(rule.name |> string(), rule.type_)
+        
     for def_ in gram
         gen |> generate(def_)
-        
+
 
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule

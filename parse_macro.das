@@ -89,9 +89,9 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
     elif expr is ExprCall && (expr as ExprCall).name == "MB"
         var subrule = (expr as ExprCall).arguments[0] |> into_rule_
-        return <- new [[Rule_ rule <- [[Rule optional <- subrule ]]]]
+        return <- new [[Rule_ rule <- [[Rule option <- subrule ]]]]
 
-    elif expr is ExprOp1 && (expr as ExprOp1).op == '+'
+    elif expr is ExprOp1 && (expr as ExprOp1).op == "+"
         var subrule = (expr as ExprCall).arguments[0] |> into_rule_
         return <- new [[Rule_ rule <- [[Rule repeat <- subrule ]]]]
 
@@ -169,14 +169,11 @@ class ParseMacro : AstCallMacro
 
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
         macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
+        macro_verify(expr.arguments[1] is ExprVar, prog, expr.at, "the first argument to parse should be ExprVar")
+        macro_verify(expr.arguments[1] is ExprMakeBlock, prog, expr.at, "parse `block` argument must be immediate block declaration")
         
-        assume blk = expr.arguments[1]
-    
-        var t2 = blk as ExprMakeBlock
-
-        macro_verify(blk is ExprMakeBlock, prog, expr.at, "parse `block` argument must be immediate block declaration")
-        
-        var expression_block = ((blk as ExprMakeBlock)._block as ExprBlock)
+        let name = (expr.arguments[1] as ExprVar).name |> string()
+        var expression_block = (expr.arguments[1] as ExprMakeBlock)._block as ExprBlock
 
         macro_verify(length(expression_block.finalList) == 0, prog, expr.at, "parse `block` argument can't have finally section")
         macro_verify(expression_block.list[0] is ExprLet, prog, expr.at, "parse `block` argument should begin with let expression")
@@ -204,11 +201,7 @@ class ParseMacro : AstCallMacro
 
         var inscope gen <- [[ParserGenerator]]
 
-        for rule in gram
-            gen |> set_rule_type(rule.name |> string(), rule.type_)
-        
-        for rule in gram 
-            gen |> generate(rule)
+        gen |> generate_grammar(gram, name)
 
         return <- qmacro_block() <|
             pass // Just return something non-zero
