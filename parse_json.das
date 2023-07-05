@@ -95,7 +95,7 @@ def into_table(var src: array<tuple<auto(K), auto(V)>>): table<K; V>
 def parse_json -> JsonValue
 
     parse json
-        let JsonValue: JsonValue
+        let JsonValue: JsonValue?
 
         rule(WS, Element as e, EOF) <|
             return e
@@ -122,7 +122,7 @@ def parse_json -> JsonValue
         // Optional element list;
         // If items are present (not []), then no trailing comma is allowed
 
-        rule("[", WS, ?ElementList as list, "]", WS) <|
+        rule("[", WS, MB(ElementList) as list, "]", WS) <|
             return <- [{array<JsonValue?>}] if list |> empty
             return <- list[0] // Take the value from optional
 
@@ -141,7 +141,7 @@ def parse_json -> JsonValue
 
         // Helper to shave off commas
 
-        rule(Element as e, WS, ",", WS) <|
+        rule(Element as e, ",", WS) <|
             return e
 
 
@@ -149,7 +149,7 @@ def parse_json -> JsonValue
 
         let Object: table<string; JsonValue?>
 
-        rule("\{", WS, ?MappingList as list, "\}", WS) <|
+        rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
             return <- {{table<string; JsonValue?>}} if list |> empty
             return <- list[0] |> into_table
         
