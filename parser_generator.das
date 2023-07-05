@@ -47,7 +47,6 @@ def iota
             return false if i == 0 else yield i
 
 
-
 def rule_left_recursive(name: string; rule: Rule): bool
     match rule
         if [[Rule alt = $v(alts)]] 
@@ -75,15 +74,6 @@ def rule_left_recursive(name: string; rule: Rule): bool
     return false
 
 
-typedef Result = tuple<success:bool; value:int; endpos:int>;
-typedef Name1 = tuple<success:bool; value:array<TypeDeclPtr>; endpos:int>;
-typedef Name2 = tuple<success:bool; value:array<TypeDeclPtr>; endpos:int>;
-
-
-def trans(v: Name1): Name2
-    var inscope v2: Name2
-    v2 := v
-    return <- v2
 
 
 def generate_wrapper(var gen: ParserGenerator)
@@ -107,6 +97,7 @@ def generate_wrapper(var gen: ParserGenerator)
             return <- result
 
     return <- wrapper_fun    
+
 
 def generate_wrapper_leftrec(var gen: ParserGenerator)
     let rule_name = gen.current_rule
@@ -149,42 +140,49 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
     return <- wrapper_fun
 
 
-def generate_parser_class(var gen: ParserGenerator; name: string): StructurePtr
+def generate_parser_class(var gen: ParserGenerator; parser_name: string): StructurePtr
     var inscope s: StructurePtr
 
-    s.module_ = compiling_module()
-
     // ParserCalculator, ParserJson, ParserDas
-    s.name = "Parser{name}" |> das_string()
+    s.name := "Parser{parser_name}"
+    s._module = compiling_module()
 
-    var offset: int = 0
-
-    for rule, type_ in keys(gen.rule_types), values(gen.rule_types)
-
-        unsafe // <- to allocate FieldDeclaration
-            var field: FieldDeclaration
-
-            field.name := rule
-            field._type := type_
-            field.offset = offset
-
-            offset += typeinfo(sizeof type table<int;int>)
-
-            s.fields |> emplace <| field
+    for rule_name, type_ in keys(gen.rule_types), values(gen.rule_types)
+        s |> add_structure_field(rule_name, type_)
 
     return <- s
 
 
-def generate_result_types(var gen: ParserGenerator; name: string): array<StructurePtr>
+def add_structure_field( var struct_:StructurePtr; name:string; var t:TypeDeclPtr)
+    //! Adds a field to the structure.
+    
+    let fi = length(struct_.fields)
+    struct_.fields |> resize(fi + 1)
+    
+    struct_.fields[fi].name := name
+    struct_.fields[fi]._type |> move <| t
+
+
+def make_default_type_decl: TypeDeclPtr
+    //! Make default result (field value to be replaced later)
+    return <- typeinfo(ast_typedecl type<tuple<success:bool; value:int; endpos:int>>)
+
+
+def generate_result_types(var gen: ParserGenerator; name: string)
     //! Result types are used internally in the compiler to store in the cache.
     //!
-    //! Manuall they would be defined like so:
-    //!     typedef Result = tuple<success:bool; value:int; endpos:int>;
+    //! Manually they would be defined like so:
+    //!     typedef Result1 = tuple<success:bool; value:int; endpos:int>;
     //! for every possible rule type
     //!
 
-    abort("TODO")
-    return <- [{array<StructurePtr>}]
+    for rule, type_ in keys(gen.rule_types), values(gen.rule_types)
+        if true
+            var inscope rule_res_type <- make_default_type_decl()
+            rule_res_type.argTypes[1] := type_ // <--- emplace `value` field in a tuple
+
+            // Map name of the rule to its 'result' type
+            gen.return_types[rule] |> move <| rule_res_type
 
 
 def generate(var gen: ParserGenerator; var def_: Definition)
