@@ -180,8 +180,8 @@ def main
 
         // var Mapping: tuple<string; JsonValue?>
 
-        // rule(stirng_ as s, WS, ":", WS, Element as e) <|
-        //     return <- [[auto s, e]]
+        // rule(string_ as s, WS, ":", WS, Element as e) <|
+        //     return <- [[tuple<string; JsonValue?> s, e]]
 
 
 
@@ -194,11 +194,11 @@ def main
             print("Parsed true\n")
             return <- JV(true)
 
-        // rule("false", WS) <|
-        //     return <- JV(false)
+        rule("false", WS) <|
+            return <- JV(false)
 
-        // rule("null", WS) <|
-        //     return <- JVNull()
+        rule("null", WS) <|
+            return <- JVNull()
             
         // rule(double_ as d, WS) <|  // <- builtin double_ rule
         //     return <- JV(d)
@@ -210,7 +210,7 @@ def main
 
 
     var parser <- [[jsonParser]] 
-    parser.input = "[\"123\"]"
+    parser.input = "[\"123\", true,[], [[true]], \"123\"]"
 
     var result <- parser |> parse_JsonValue()
 

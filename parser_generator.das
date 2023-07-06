@@ -568,7 +568,6 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             if rule_.name == "" // Rule not bound by name, discard result
                 var inscope rule_code <- gen |> generate(rule_.rule)
-
                 var inscope t <- qmacro_block <|
                     var res <- invoke($b(rule_code))
 
@@ -680,7 +679,7 @@ def generate_terminal(var gen: ParserGenerator; terminal: Terminal): ExpressionP
             return <- qmacro_block <|
                 var res <- parser |> match_string_literal
                 return [[$t(return_type)]] if !res.success 
-                var $i(handle) = res._1
+                var $i(handle) : string = res._1
 
         if [[Terminal double_ = $v(handle)]]
 
