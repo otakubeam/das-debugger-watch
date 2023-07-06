@@ -31,7 +31,10 @@ variant Terminal
     number: string
 
     // WS <- [' ', '\n', '\t']*
-    whitespace: void? 
+    whitespace: void?
+
+    // End of file (!.)
+    EOF: void? 
 
     // "..." as <name>
     string_: string
