@@ -17,140 +17,80 @@ require daslib/debug
 require parse_macro
 
 
-struct Parser
-    prim_cache: table<int; Result>
-    unary_cache: table<int; Result>
-    mul_cache: table<int; Result>
-    add_cache: table<int; Result>
 
-    input: string
-    index: int
+// def match_string_literal(var parser: Parser): tuple<success:bool; string>
+//     //! Tries to match everything inside ""
 
+//     // Define buffer to store string literal characters
+//     var inscope buffer: das_string
 
-def get_current_char(var parser: Parser): int
-    return -1 if parser.input |> length == parser.index 
-    return parser.input |> character_at(parser.index)
+//     var current_char = parser |> get_current_char
 
-
-def lex_number(var parser: Parser): Result
-    //! Simple lexing of decimal integers, doen't check for overflow
-
-    return [[Result]] if !parser |> get_current_char |> is_number
+//     // If the current character is not a double quote, the rule is not a string
+//     return [[auto false, ""]] if current_char != '"'
     
-    var result = 0
+//     parser |> move(1)
+//     current_char = parser |> get_current_char
 
-    while parser |> get_current_char |> is_number()
-        result *= 10
-        result +=  parser |> get_current_char - '0'
-        parser |> move(1)
+//     while current_char != '"' && current_char != -1
+//         buffer |> append(current_char)
+//         parser |> move(1)
+//         current_char = parser |> get_current_char
 
-    return [[Result true, result, parser |> mark]]
+//     // If we've reached EOF file without finding a closing quote
+//     return [[auto false, ""]] if current_char == -1
 
-
-def skip_whitespace(var parser: Parser)
-    while parser |> get_current_char |> is_white_space
-        parser |> move(1)
-
-
-def match_string_literal(var parser: Parser): tuple<success:bool; string>
-    //! Tries to match everything inside ""
-
-    // Define buffer to store string literal characters
-    var inscope buffer: das_string
-
-    var current_char = parser |> get_current_char
-
-    // If the current character is not a double quote, the rule is not a string
-    return [[auto false, ""]] if current_char != '"'
-    
-    parser |> move(1)
-    current_char = parser |> get_current_char
-
-    while current_char != '"' && current_char != -1
-        buffer |> append(current_char)
-        parser |> move(1)
-        current_char = parser |> get_current_char
-
-    // If we've reached EOF file without finding a closing quote
-    return [[auto false, ""]] if current_char == -1
-
-    parser |> move(1)
-    return [[auto true, buffer |> string()]]
+//     parser |> move(1)
+//     return [[auto true, buffer |> string()]]
 
 
-def match_double_literal(var parser: Parser): tuple<success:bool; double>
-    //! Matches doubles in the form of [-+]? [0-9]* .? [0-9]+ ([eE] [-+]? [0-9]+)?
-    //! The number is not checked to be representable as defined in IEEE-754
+// def match_double_literal(var parser: Parser): tuple<success:bool; double>
+//     //! Matches doubles in the form of [-+]? [0-9]* .? [0-9]+ ([eE] [-+]? [0-9]+)?
+//     //! The number is not checked to be representable as defined in IEEE-754
 
-    var inscope buffer: das_string
-    var current_char = parser |> get_current_char
+//     var inscope buffer: das_string
+//     var current_char = parser |> get_current_char
 
-    if current_char == '-' || current_char == '+'
-        buffer |> append(current_char)
-        parser |> move(1)
-        current_char = parser |> get_current_char
+//     if current_char == '-' || current_char == '+'
+//         buffer |> append(current_char)
+//         parser |> move(1)
+//         current_char = parser |> get_current_char
 
-    // Add everything up to '.' to the buffer
-    while current_char |> is_number || current_char == '.'
-        buffer |> append(current_char)
-        parser |> move(1)
-        current_char = parser |> get_current_char
+//     // Add everything up to '.' to the buffer
+//     while current_char |> is_number || current_char == '.'
+//         buffer |> append(current_char)
+//         parser |> move(1)
+//         current_char = parser |> get_current_char
     
 
-    // Match exponent part
-    if current_char == 'e' || current_char == 'E'
-        buffer |> append(current_char)
-        parser |> move(1)
-        current_char = parser |> get_current_char
+//     // Match exponent part
+//     if current_char == 'e' || current_char == 'E'
+//         buffer |> append(current_char)
+//         parser |> move(1)
+//         current_char = parser |> get_current_char
 
-        // Check for '-' or '+' after 'e' or 'E'
-        if current_char == '-' || current_char == '+'
-            buffer |> append(current_char)
-            parser |> move(1)
-            current_char = parser |> get_current_char
+//         // Check for '-' or '+' after 'e' or 'E'
+//         if current_char == '-' || current_char == '+'
+//             buffer |> append(current_char)
+//             parser |> move(1)
+//             current_char = parser |> get_current_char
 
-        // Continue appending digits after 'e' or 'E'
-        while current_char |> is_number
-            buffer |> append(current_char)
-            parser |> move(1)
-            current_char = parser |> get_current_char
+//         // Continue appending digits after 'e' or 'E'
+//         while current_char |> is_number
+//             buffer |> append(current_char)
+//             parser |> move(1)
+//             current_char = parser |> get_current_char
  
-    return [[auto true, buffer |> string() |> double()]]
-
-
-def mark(parser: Parser): int
-    return parser.index
-
-
-def reset(var parser: Parser; pos: int)
-    parser.index = pos
-
-
-def matches(var parser: Parser; template_: string): bool
-    with parser
-        var st = input |> slice(index)
-        if !st |> starts_with(template_)
-            return false
-        parser |> move(template_ |> length)
-        return true
-
-
-def reached_EOF(var parser: Parser): bool 
-    return parser |> get_current_char != -1
-
-
-def move(var parser: Parser; offset : int) 
-    parser.index += offset
-
+//     return [[auto true, buffer |> string() |> double()]]
 
 [export]
 def main
 
-    var parser <- [[Parser]]
+    var parser <- [[calcParser]]
     parser.input = "1+2*2+1---(3*2+1*2)-1-1-1*2"
 
     parse calc
-        let add: int
+        var add: int
 
         rule(add as a, "+", mul as m) <|
             return a + m
@@ -159,7 +99,7 @@ def main
         rule(mul as m) <|
             return m
 
-        let mul: int
+        var mul: int
 
         rule(mul as m, "*", unary as u) <|
             return m * u 
@@ -168,14 +108,14 @@ def main
         rule(unary as u) <|
             return u 
 
-        let unary: int
+        var unary: int
         
         rule("-", unary as u) <|
             return u 
         rule(prim as p) <|
             return p 
 
-        let prim: int
+        var prim: int
         
         rule("(", add as a, ")") <|
             return a

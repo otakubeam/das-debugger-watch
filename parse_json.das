@@ -128,7 +128,7 @@ def main
 
         rule("[", WS, MB(ElementList) as list, "]", WS) <|
             return <- [[array<JsonValue?>]] if list |> empty
-            return list[0] // Take the value from optional
+            return <- list[0] // Take the value from optional
 
 
         let ElementList: array<JsonValue?>

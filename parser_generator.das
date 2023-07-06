@@ -220,7 +220,7 @@ def generate(var gen: ParserGenerator; var def_: Definition)
     var inscope function_body <- gen |> generate(def_.rule)
     var inscope return_type := gen.return_types[def_.name]
     
-    var inscope fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: Parser): $t(return_type)
+    var inscope fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         $b(function_body)
         return <- [[$t(return_type)]]
 
@@ -246,19 +246,66 @@ def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name
     var inscope s <- gen |> generate_parser_class(name)
     compiling_module() |> add_structure(s)
 
+    gen |> generate_parser_methods
+
     for def_ in gram
         gen |> generate(def_)
 
 
-def generate_parser_mathods(var gen: ParserGenerator) 
-    var mark <- qmacro_function("mark") <| (parser: $t(gen.parser_type)): int
+def generate_parser_methods(var gen: ParserGenerator) 
+    var inscope mark <- qmacro_function("mark") <| $(parser: $t(gen.parser_type)): int
         return parser.index
 
-    var reset <- qmacro_function("reset") <| (parser: $t(gen.parser_type); pos: int)
+    var inscope reset <- qmacro_function("reset") <| $(var parser: $t(gen.parser_type); pos: int)
         parser.index = pos
+
+    var inscope move <- qmacro_function("move") <| $(var parser: $t(gen.parser_type); offset : int)
+        parser.index += offset
+
+    var inscope eof <- qmacro_function("reached_EOF") <| $(var parser: $t(gen.parser_type)): bool
+        return parser |> get_current_char == -1
+
+    var inscope matches <- qmacro_function("matches") <| $(var parser: $t(gen.parser_type); template_: string): bool
+        with parser
+            var st = input |> slice(index)
+            if !st |> starts_with(template_)
+                return false
+            parser |> move(template_ |> length)
+            return true
+
+    var inscope skip_whitespace <- qmacro_function("skip_whitespace") <| $(var parser: $t(gen.parser_type))
+        while parser |> get_current_char |> is_white_space
+            parser |> move(1)
+
+    var inscope get_current_char <- qmacro_function("get_current_char") <| $(var parser: $t(gen.parser_type)): int
+        return -1 if parser.input |> length == parser.index 
+        return parser.input |> character_at(parser.index)
+
+    var inscope lex_number <- qmacro_function("lex_number") <| $(var parser: $t(gen.parser_type)): tuple<success:bool;value:int;endpos:int>
+        //! Simple lexing of decimal integers, doesn't check for overflow
+
+        if !parser |> get_current_char |> is_number
+            // Can't use typedef in this context, sadly
+            return [[tuple<success:bool;value:int;endpos:int>]]         
+        
+        var result = 0
+
+        while parser |> get_current_char |> is_number()
+            result *= 10
+            result +=  parser |> get_current_char - '0'
+            parser |> move(1)
+
+        return [[tuple<success:bool;value:int;endpos:int> true, result, parser |> mark]]
+
 
     compiling_module() |> add_function(mark)
     compiling_module() |> add_function(reset)
+    compiling_module() |> add_function(move)
+    compiling_module() |> add_function(eof)
+    compiling_module() |> add_function(matches)
+    compiling_module() |> add_function(skip_whitespace)
+    compiling_module() |> add_function(get_current_char)
+    compiling_module() |> add_function(lex_number)
 
 
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
@@ -274,6 +321,7 @@ def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
 
 
 def set_rule_type(var gen: ParserGenerator; rule_name: string; type_: TypeDeclPtr)
+    let const_ = type_.isConst
     gen.rule_types[rule_name] |> move_new(type_ |> clone_type)
 
 
@@ -468,7 +516,7 @@ def alternative_add_epilogue(var block_contents: array<ExpressionPtr>; var gen: 
     var inscope return_type := gen.return_types[gen.current_rule]
 
     var inscope t <- qmacro_block <|
-        var val: $t(action_type) <- invoke <| $(): $t(action_type)
+        var val: $t(action_type) -const <- invoke <| $(): $t(action_type) -const
             $b(action_block)
 
         // For some reason I cannot directly return [[Result]]
@@ -496,9 +544,9 @@ def generate_terminal(var gen: ParserGenerator; terminal: Terminal): ExpressionP
         if [[Terminal number = $v(handle)]]
              
             return <- qmacro_block <|
-                var res : Result = parser |> lex_number
-                return [[$t(return_type)]] if !res.success 
-                var $i(handle) = res.value
+                var res : tuple<bool;int;int> = parser |> lex_number
+                return [[$t(return_type)]] if !res._0 
+                var $i(handle) = res._1
 
         if [[Terminal whitespace = _]]
 
