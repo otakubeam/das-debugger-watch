@@ -148,7 +148,7 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
     return <- wrapper_fun
 
 
-def generate_parser_class(var gen: ParserGenerator; parser_name: string): StructurePtr
+def generate_parser_class(var gen: ParserGenerator; parser_name: string)
     var inscope s: StructurePtr := new [[Structure()]]
 
     // jsonParser, expressionParser, dasParser
@@ -179,7 +179,7 @@ def generate_parser_class(var gen: ParserGenerator; parser_name: string): Struct
 
     gen.parser_type := parser_type
 
-    return <- s
+    compiling_module() |> add_structure(s)
 
 
 def add_structure_field(var struct_: StructurePtr; name: string; var t: TypeDeclPtr)
@@ -240,13 +240,11 @@ def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name
     for rule in gram
         gen |> set_rule_type(rule.name |> string(), rule.type_)
     
-    // Map rules to their result types
+    // In this order: class depends on types, methods depend on class
     gen |> generate_result_types
-
-    // Generate parser struct
-    var inscope s <- gen |> generate_parser_class(name)
-    compiling_module() |> add_structure(s)
-
+    
+    gen |> generate_parser_class(name)
+    
     gen |> generate_parser_methods
 
     for def_ in gram
@@ -348,8 +346,76 @@ def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
 
 
 def set_rule_type(var gen: ParserGenerator; rule_name: string; type_: TypeDeclPtr)
-    let const_ = type_.isConst
     gen.rule_types[rule_name] |> move_new(type_ |> clone_type)
+
+
+def set_rule_handle(var subrule_: Rule_; handle: string)
+    //! Motivating example: *CommaSeparatedElements as els
+    //!
+    //! Here the name 'els' is bound to the repetition (*)
+    //! In order to get the contents of the repetition in the resulting vector
+    //! we need to bind the name of the subrule 
+
+    assume subrule_variant = subrule_.rule
+
+    match subrule_variant
+        if [[Rule nonterminal = $v(nonterm)]]       
+            unsafe // Moving values that contain smart pointers is generally unsafe
+                   // But here we know that the contained variant is nonterminal (string) and cannot 
+                   // possibly contain valid smart pointer. Thereforу it should be safe to overwrite it.
+                subrule_.rule <- [[Rule bound_nonterminal = [[auto nonterm, handle]]]]
+                return
+
+        if [[Rule terminal = $v(term)]]
+            match term
+                if [[Terminal lit = $v(l) ]]
+                    // Something like (*"123" as foo)
+                    abort("Matchint repeated literals is not allowed")
+                
+                if [[Terminal range_ = $v(r) ]]
+                    // *[1-9] as numbers -- should be possible
+                    abort("Matchint repeated literals is not allowed")
+                 
+                if [[Terminal number = $v(name)]]
+                    name = handle
+                 
+                if [[Terminal whitespace = _]]
+                    abort("Matchint repeated whitespace is not allowed")
+
+                if [[Terminal EOF = _]]
+                    abort("Matchint repeated EOF is not allowed")
+                        
+                if [[Terminal string_ = $v(name)]]
+                    name = handle
+
+                if [[Terminal double_ = $v(name)]]
+                    name = handle
+            
+            return
+
+        if [[Rule bound_nonterminal = $v(nonterm)]]
+            // Cannot bind several times
+            abort("Unreachable")
+
+        if [[Rule seq = $v(rules)]]
+            abort("Unreachable")
+
+        if [[Rule alt = $v(alts)]] 
+            abort("Unreachable")
+
+        if [[Rule maybe_repeat = $v(rule_)]]
+            abort("Unreachable")
+
+        if [[Rule repeat = $v(rule_)]]
+            abort("Unreachable")
+
+        if [[Rule subrule = $v(subrule)]]
+            abort("TODO: set_rule_handle option")
+
+        if [[Rule option = $v(rule_)]]
+            abort("Unreachable")
+
+    abort("Unreachable")
 
 
 def get_action_block(var alternative: Alternative): ExpressionPtr
