@@ -33,6 +33,12 @@ struct ParserGenerator
     // For use in actions.
     current_rule: string
 
+    // E.g. jsonParser
+    parser_name: string
+
+    // The constructed type for the parser
+    parser_type: TypeDeclPtr
+
 
 def abort(message: string)
     print("{message}\n")
@@ -82,8 +88,8 @@ def generate_wrapper(var gen: ParserGenerator)
     let inner_parsing_fun = "parse_{rule_name}_inner"
 
     var inscope return_type <- gen.return_types[rule_name]
-    
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(return_type)
+
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         var mark = parser |> mark
         
         with parser 
@@ -107,7 +113,7 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
 
     var inscope return_type <- gen.return_types[rule_name]
 
-    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: Parser): $t(return_type)
+    var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         var mark = parser |> mark
         
         with parser 
@@ -119,7 +125,7 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
 
             // Build new cache entry from scratch
             
-            var res = [[Result]]
+            var res = [[$t(return_type)]]
             $i(cache_table)[mark] = res
 
             while true
@@ -147,7 +153,11 @@ def generate_parser_class(var gen: ParserGenerator; parser_name: string): Struct
 
     // jsonParser, expressionParser, dasParser
     s.name := "{parser_name}Parser"
+    gen.parser_name := s.name
+
     s._module = compiling_module()
+
+    // Add a field for every type of cache
 
     for rule_name, type_ in keys(gen.rule_types), values(gen.rule_types)
         if true
@@ -155,18 +165,30 @@ def generate_parser_class(var gen: ParserGenerator; parser_name: string): Struct
             var inscope t2 <- typeinfo(ast_typedecl type<table<int; int>>)
             t2.secondType := gen.return_types[rule_name]
             
-            s |> add_structure_field(rule_name, t2)
+            s |> add_structure_field("{rule_name}_cache", t2)
+
+    // Add input and index fields
+
+    s |> add_structure_field("input", typeinfo(ast_typedecl type<string>))
+    s |> add_structure_field("index", typeinfo(ast_typedecl type<int>))
+
+    // Save constructed parser type for later
+
+    var inscope parser_type := typeinfo(ast_typedecl type<ParserGenerator>)
+    parser_type.structType := s |> get_ptr
+
+    gen.parser_type := parser_type
 
     return <- s
 
 
-def add_structure_field( var struct_:StructurePtr; name:string; var t:TypeDeclPtr)
+def add_structure_field(var struct_: StructurePtr; name: string; var t: TypeDeclPtr)
     //! Adds a field to the structure.
     
     let fi = length(struct_.fields)
     struct_.fields |> resize(fi + 1)
     
-    struct_.fields[fi].name := "{name}_cache"
+    struct_.fields[fi].name := name
     struct_.fields[fi]._type |> move <| t
 
 
@@ -220,14 +242,23 @@ def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name
     // Map rules to their result types
     gen |> generate_result_types
 
-    //gen |> dump_table
-
     // Generate parser struct
     var inscope s <- gen |> generate_parser_class(name)
     compiling_module() |> add_structure(s)
 
     for def_ in gram
         gen |> generate(def_)
+
+
+def generate_parser_mathods(var gen: ParserGenerator) 
+    var mark <- qmacro_function("mark") <| (parser: $t(gen.parser_type)): int
+        return parser.index
+
+    var reset <- qmacro_function("reset") <| (parser: $t(gen.parser_type); pos: int)
+        parser.index = pos
+
+    compiling_module() |> add_function(mark)
+    compiling_module() |> add_function(reset)
 
 
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
@@ -276,7 +307,7 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             var inscope t  <- qmacro_block <|
                 var $i(varname) <- $c(parse_fun)(parser)
-                return [[$t(return_type)]] if !$i(varname).success
+                return <- [[$t(return_type)]] if !$i(varname).success
 
             return <- flatten_block(t as ExprBlock)
             
@@ -293,7 +324,7 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             var inscope t <- qmacro_block <|
                 var $i(varname) <- $c(parse_fun)(parser)
-                return [[$t(return_type)]] if !$i(varname).success
+                return <- [[$t(return_type)]] if !$i(varname).success
                 var $i(result_name) <- $i(varname).value
 
             return <- flatten_block(t as ExprBlock)
@@ -437,17 +468,16 @@ def alternative_add_epilogue(var block_contents: array<ExpressionPtr>; var gen: 
     var inscope return_type := gen.return_types[gen.current_rule]
 
     var inscope t <- qmacro_block <|
-        var val <- invoke <| $(): $t(action_type)
+        var val: $t(action_type) <- invoke <| $(): $t(action_type)
             $b(action_block)
 
         // For some reason I cannot directly return [[Result]]
-        var result = [[$t(return_type) true, val, parser |> mark]]
+        var result: $t(return_type) = [[$t(return_type) true, val, parser |> mark]]
         return <- result
 
     for e in flatten_block(t as ExprBlock)
         block_contents |> emplace <| e
     
-
 
 def generate_terminal(var gen: ParserGenerator; terminal: Terminal): ExpressionPtr
     var inscope return_type := gen.return_types[gen.current_rule]
@@ -486,14 +516,14 @@ def generate_terminal(var gen: ParserGenerator; terminal: Terminal): ExpressionP
             return <- qmacro_block <|
                 var res <- parser |> match_string_literal
                 return [[$t(return_type)]] if !res.success 
-                var $i(handle) = res._1
+                var $i(handle) = res.value
 
         if [[Terminal double_ = $v(handle)]]
 
             return <- qmacro_block <|
                 var res <- parser |> match_double_literal
                 return [[$t(return_type)]] if !res.success 
-                var $i(handle) = res._1
+                var $i(handle) = res.value
 
 
     abort("Unreachable")

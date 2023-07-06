@@ -2,7 +2,7 @@ options indenting = 4
 options no_unused_block_arguments = false
 options no_unused_function_arguments = false
 options no_aot = true
-// options strict_smart_pointers = true
+options strict_smart_pointers = true
 
 module parse_macro
 
@@ -53,8 +53,30 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         if bound_rule == "number"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal number = bound_name]]]]]]
+        elif bound_rule == "double_"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal double_ = bound_name]]]]]]
+        elif bound_rule == "string_"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal string_ = bound_name]]]]]]
 
         return <- new [[Rule_ rule <- [[Rule bound_nonterminal = [[auto bound_rule, bound_name]]]]]]
+
+    
+    elif expr is ExprAsVariant && (expr as ExprAsVariant).value is ExprCall
+        // Optional rule (MB) -- zero or one
+        var as_expr <- expr as ExprAsVariant 
+        var subrule = ((expr as ExprAsVariant).value as ExprCall).arguments[0] |> into_rule_
+        subrule.name := as_expr.name
+        var inscope t <- [[Rule option <- subrule]]
+        return <- new [[Rule_ rule <- t, name <- as_expr.name |> string()]]
+
+    elif expr is ExprAsVariant && ((expr as ExprAsVariant).value is ExprPtr2Ref)
+        // Optional rule (MB) -- zero or one
+        var as_expr <- expr as ExprAsVariant 
+
+        var subrule = (as_expr.value as ExprPtr2Ref).subexpr |> into_rule_
+        subrule.name := as_expr.name
+        return <- new [[Rule_ rule <- [[Rule maybe_repeat <- subrule ]]]]
+
 
     elif expr is ExprAsVariant
         // This way goes *<rule> as <name>,
@@ -65,8 +87,9 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         var rule: Rule_? <- into_rule_(as_expr.value)
         rule.name = as_expr.name |> string()
-
+        print("{rule}\n")
         return <- rule
+
 
     elif expr is ExprVar
         // Nonbound terminal
@@ -74,6 +97,10 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         if name == "number"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal number = ""]]]]]]
+        elif name == "WS"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal whitespace = null]]]]]]
+        elif name == "EOF"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal EOF = null]]]]]]
         else 
             return <- new [[Rule_ rule <- [[Rule nonterminal <- name]]]]
     
@@ -84,15 +111,22 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
                           [[Terminal lit = const_string.value |> string()]]]]]]
     
     elif expr is ExprPtr2Ref
+        // Repetition (*) -- zero or more
+
         var subrule = (expr as ExprPtr2Ref).subexpr |> into_rule_
         return <- new [[Rule_ rule <- [[Rule maybe_repeat <- subrule ]]]]
 
     elif expr is ExprCall && (expr as ExprCall).name == "MB"
+        // Optional rule (MB) -- zero or one
+
         var subrule = (expr as ExprCall).arguments[0] |> into_rule_
-        return <- new [[Rule_ rule <- [[Rule option <- subrule ]]]]
+        return <- new [[Rule_ rule <- [[Rule option = subrule ]]]]
 
     elif expr is ExprOp1 && (expr as ExprOp1).op == "+"
-        var subrule = (expr as ExprCall).arguments[0] |> into_rule_
+        abort("TODO: Unreachable +")
+        // Several (+) -- one or more
+
+        var subrule = (expr as ExprOp1).subexpr |> into_rule_
         return <- new [[Rule_ rule <- [[Rule repeat <- subrule ]]]]
 
     elif expr is ExprConstInt
@@ -137,10 +171,10 @@ class ParseMacro : AstCallMacro
     //!    parse expression
     //!        let add : int
     //!    
-    //!        rule(add as a, '+', mul as m) <|
+    //!        rule(add as a, "+", mul as m) <|
     //!            return a + m
     //!    
-    //!        rule(add as a, '-', mul as m) <|
+    //!        rule(add as a, "-", mul as m) <|
     //!            return a - m
     //!    
     //!        rule(mul as m) <|
@@ -169,10 +203,10 @@ class ParseMacro : AstCallMacro
 
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
         macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
-        macro_verify(expr.arguments[1] is ExprVar, prog, expr.at, "the first argument to parse should be ExprVar")
+        macro_verify(expr.arguments[0] is ExprVar, prog, expr.at, "the first argument to parse should be ExprVar")
         macro_verify(expr.arguments[1] is ExprMakeBlock, prog, expr.at, "parse `block` argument must be immediate block declaration")
         
-        let name = (expr.arguments[1] as ExprVar).name |> string()
+        let name = (expr.arguments[0] as ExprVar).name |> string()
         var expression_block = (expr.arguments[1] as ExprMakeBlock)._block as ExprBlock
 
         macro_verify(length(expression_block.finalList) == 0, prog, expr.at, "parse `block` argument can't have finally section")
@@ -203,7 +237,7 @@ class ParseMacro : AstCallMacro
 
         gen |> generate_grammar(gram, name)
 
-        return <- qmacro_block() <|
+        return <- qmacro_block <|
             pass // Just return something non-zero
 
 

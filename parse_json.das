@@ -16,6 +16,13 @@ require parse_macro
 
 // Taken from daslib/json
 
+
+struct JsonValue
+    //! JSON value, wraps any JSON element.
+    value : JsValue
+
+
+
 variant JsValue
     //! Single JSON element.
     _object : table<string; JsonValue?>
@@ -24,10 +31,6 @@ variant JsValue
     _number : double
     _bool   : bool
     _null   : void?
-
-struct JsonValue
-    //! JSON value, wraps any JSON element.
-    value : JsValue
 
 
 
@@ -82,7 +85,7 @@ def JV ( var v : array<JsonValue?> )
     return new [[JsonValue value <- [[JsValue _array <- v]]]]
 
 
-def into_table(var src: array<tuple<auto(K), auto(V)>>): table<K; V>
+def into_table(var src: array<tuple<auto(K); auto(V)>>): table<K; V>
     var result: table<K; V>
     for elem in src
         result[elem._0] <- elem._1
@@ -92,26 +95,27 @@ def into_table(var src: array<tuple<auto(K), auto(V)>>): table<K; V>
 // Parsing specification
 
 
-def parse_json -> JsonValue
+[export]
+def main
 
     parse json
         let JsonValue: JsonValue?
 
         rule(WS, Element as e, EOF) <|
-            return e
+            return <- e
 
 
 
         let Element: JsonValue?
             
         rule(Array as a) <|
-            return JV(a)
+            return <- JV(a)
 
-        rule(Object as o) <|
-            return JV(o)
+        // rule(Object as o) <|
+        //     return <- JV(o)
 
         rule(Value as v) <|
-            return v
+            return <- v
 
 
 
@@ -123,8 +127,8 @@ def parse_json -> JsonValue
         // If items are present (not []), then no trailing comma is allowed
 
         rule("[", WS, MB(ElementList) as list, "]", WS) <|
-            return <- [{array<JsonValue?>}] if list |> empty
-            return <- list[0] // Take the value from optional
+            return <- [[array<JsonValue?>]] if list |> empty
+            return list[0] // Take the value from optional
 
 
         let ElementList: array<JsonValue?>
@@ -142,35 +146,36 @@ def parse_json -> JsonValue
         // Helper to shave off commas
 
         rule(Element as e, ",", WS) <|
-            return e
+            return <- e
 
 
 
 
-        let Object: table<string; JsonValue?>
+        // let Object: table<string; JsonValue?>
 
-        rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
-            return <- {{table<string; JsonValue?>}} if list |> empty
-            return <- list[0] |> into_table
+        // rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
+        //     var empty: table<string; JsonValue?>
+        //     return <- empty if list |> empty
+        //     return <- list[0] |> into_table
         
 
-        let MappingList: array<tuple<string; JsonValue?>>
+        // let MappingList: array<tuple<string; JsonValue?>>
 
-        rule(*CommaSeparatedMappings as els, Mapping as last) <|
-            els |> push <| last
-            return <- els
-
-
-        let CommaSeparatedMappings: tuple<string; JsonValue?>
-
-        rule(Mapping as m, ",", WS) <|
-            return m
+        // rule(*CommaSeparatedMappings as els, Mapping as last) <|
+        //     els |> push <| last
+        //     return <- els
 
 
-        let Mapping: tuple<string; JsonValue?>
+        // let CommaSeparatedMappings: tuple<string; JsonValue?>
 
-        rule(stirng_ as s, WS, ":", WS, Element as e) <|
-            return [[auto s, e]]
+        // rule(Mapping as m, ",", WS) <|
+        //     return <- m
+
+
+        // let Mapping: tuple<string; JsonValue?>
+
+        // rule(stirng_ as s, WS, ":", WS, Element as e) <|
+        //     return <- [[auto s, e]]
 
 
 
@@ -180,20 +185,22 @@ def parse_json -> JsonValue
         let Value: JsonValue?
 
         rule("true", WS) <|
-            return JV(true)
+            return <- JV(true)
 
-        rule("false", WS) <|
-            return JV(false)
+        // rule("false", WS) <|
+        //     return <- JV(false)
 
-        rule("null", WS) <|
-            return JVNull()
+        // rule("null", WS) <|
+        //     return <- JVNull()
             
-        rule(double_ as d, WS) <|  // <- builtin double_ rule
-            return JV(d)
+        // rule(double_ as d, WS) <|  // <- builtin double_ rule
+        //     return <- JV(d)
 
         rule(string_ as s, WS) <|  // <- builtin string_ rule
-            return JV(s)
+            return <- JV(s)
 
 
-let parsed_json = json("{ \"key\": \"value\" }")
 
+    var parser <- [[jsonParser]] 
+    parser.input = "\{ \"key\": \"value\" \}"
+    return <- parser |> parse_JsonValue()
