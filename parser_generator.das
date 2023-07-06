@@ -224,7 +224,7 @@ def generate(var gen: ParserGenerator; var def_: Definition)
         $b(function_body)
         return <- [[$t(return_type)]]
 
-    //fun |> describe |> print 
+    fun |> describe |> print 
     compiling_module() |> add_function(fun)
 
     if rule_left_recursive(def_.name, def_.rule)
@@ -232,7 +232,6 @@ def generate(var gen: ParserGenerator; var def_: Definition)
         compiling_module() |> add_function(wrapper)
     else
         var inscope wrapper <- gen |> generate_wrapper
-        wrapper |> describe |> print 
         compiling_module() |> add_function(wrapper)
 
 
@@ -319,7 +318,7 @@ def generate_parser_methods(var gen: ParserGenerator)
         return [[auto false, ""]] if parser |> reached_EOF
 
         parser |> move(1)
-        return [[auto true, buffer |> string()]]
+        return [[auto true, "mystring"]]
 
 
     compiling_module() |> add_function(mark)
@@ -349,7 +348,7 @@ def set_rule_type(var gen: ParserGenerator; rule_name: string; type_: TypeDeclPt
     gen.rule_types[rule_name] |> move_new(type_ |> clone_type)
 
 
-def set_rule_handle(var subrule_: Rule_; handle: string)
+def set_rule_handle(var subrule_: Rule_?; handle: string)
     //! Motivating example: *CommaSeparatedElements as els
     //!
     //! Here the name 'els' is bound to the repetition (*)
@@ -492,10 +491,10 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
         if [[Rule maybe_repeat = $v(rule_)]]
 
             var result_handle = rule_.name
-            var inscope rule_code <- gen |> generate(rule_.rule)
             var inscope type_decl <- gen |> get_rule_type(rule_.rule)
 
             if rule_.name == "" // Rule not bound by name, discard result
+                var inscope rule_code <- gen |> generate(rule_.rule)
 
                 var inscope t <- qmacro_block <|
                     while true
@@ -506,15 +505,26 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
 	        // Bind result to the provided name 
 
+            set_rule_handle(rule_, "temp_name")
+            var inscope rule_code <- gen |> generate(rule_.rule)
+
+            var inscope epilogue <- qmacro_block <|
+                $i(result_handle) |> emplace <| temp_name
+                return <- [[tuple<success:bool;value:array<$t(type_decl)>;endpos:int>]]
+
+            for e in flatten_block(epilogue as ExprBlock)
+                rule_code |> emplace <| e
+
             var inscope t <- qmacro_block <|
                 var $i(result_handle) : array<$t(type_decl)>
 
                 while true
+                    var sz = $i(result_handle) |> length
+
                     var res <- invoke <|
-                        $b(rule_code)
-                        
-                    break if !res.success
-                    $i(result_handle) |> emplace <| res.value
+                        $b(rule_code) // Adds an element on success
+
+                    break if sz == $i(result_handle) |> length
 
             return <- flatten_block(t as ExprBlock)
 
@@ -552,24 +562,36 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
         if [[Rule option = $v(rule_)]]
             var result_handle = rule_.name
-            var inscope rule_code <- gen |> generate(rule_.rule)
+            
             var inscope type_decl <- gen |> get_rule_type(rule_.rule)
             var inscope result_type := gen.return_types[gen.current_rule]
 
             if rule_.name == "" // Rule not bound by name, discard result
+                var inscope rule_code <- gen |> generate(rule_.rule)
 
                 var inscope t <- qmacro_block <|
                     var res <- invoke($b(rule_code))
+
                 return <- flatten_block(t as ExprBlock)
 
-	        // Bind result to the provided name 
+	        // Bind result to the provided name
+
+            set_rule_handle(rule_, "temp_name")
+            var inscope rule_code <- gen |> generate(rule_.rule)
+
+
+            var inscope epilogue <- qmacro_block <|
+                $i(result_handle) |> emplace <| temp_name
+                return <- [[tuple<success:bool;value:$t(type_decl);endpos:int>]]
+
+            for e in flatten_block(epilogue as ExprBlock)
+                rule_code |> emplace <| e
 
             var inscope t <- qmacro_block <|
                 var $i(result_handle) : array<$t(type_decl)>
 
-                var res: $t(result_type) <- invoke($b(rule_code))
-                if res.success
-                    $i(result_handle) |> emplace <| res.value
+                var res: $t(result_type) <- invoke <|
+                    $b(rule_code)
 
             return <- flatten_block(t as ExprBlock)
 

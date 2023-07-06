@@ -202,6 +202,9 @@ class ParseMacro : AstCallMacro
         return false
 
     def override visit ( prog:ProgramPtr; mod:Module?; expr:smart_ptr<ExprCallMacro> ) : ExpressionPtr
+        
+        // Verify
+        
         macro_verify(length(expr.arguments) == 2, prog, expr.at, "expecting parse(what) <| block")
         macro_verify(expr.arguments[0] is ExprVar, prog, expr.at, "the first argument to parse should be ExprVar")
         macro_verify(expr.arguments[1] is ExprMakeBlock, prog, expr.at, "parse `block` argument must be immediate block declaration")

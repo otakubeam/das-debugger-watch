@@ -8,6 +8,7 @@ require parser_generator public
 
 require strings
 require daslib/strings_boost
+require daslib/json
 
 options debugger
 require daslib/debug
@@ -17,20 +18,20 @@ require parse_macro
 // Taken from daslib/json
 
 
-struct JsonValue
-    //! JSON value, wraps any JSON element.
-    value : JsValue
+// struct JsonValue
+//     //! JSON value, wraps any JSON element.
+//     value : JsValue
 
 
 
-variant JsValue
-    //! Single JSON element.
-    _object : table<string; JsonValue?>
-    _array  : array<JsonValue?>
-    _string : string
-    _number : double
-    _bool   : bool
-    _null   : void?
+// variant JsValue
+//     //! Single JSON element.
+//     _object : table<string; JsonValue?>
+//     _array  : array<JsonValue?>
+//     _string : string
+//     _number : double
+//     _bool   : bool
+//     _null   : void?
 
 
 
@@ -64,25 +65,25 @@ variant JsValue
 // Creation helpers
 
 
-def JV ( v : string )
-    //! Creates `JsonValue` out of value.
-    return new [[JsonValue value <- [[JsValue _string = v]]]]
+// def JV ( v : string )
+//     //! Creates `JsonValue` out of value.
+//     return new [[JsonValue value <- [[JsValue _string = v]]]]
 
-def JV ( v : double )
-    return new [[JsonValue value <- [[JsValue _number = v]]]]
+// def JV ( v : double )
+//     return new [[JsonValue value <- [[JsValue _number = v]]]]
 
-def JV ( v : bool )
-    return new [[JsonValue value <- [[JsValue _bool = v]]]]
+// def JV ( v : bool )
+//     return new [[JsonValue value <- [[JsValue _bool = v]]]]
 
-def JVNull
-    //! Creates `JsonValue` representing `null`.
-    return new [[JsonValue value <- [[JsValue _null = null]]]]
+// def JVNull
+//     //! Creates `JsonValue` representing `null`.
+//     return new [[JsonValue value <- [[JsValue _null = null]]]]
 
-def JV ( var v : table<string;JsonValue?> )
-    return new [[JsonValue value <- [[JsValue _object <- v]]]]
+// def JV ( var v : table<string;JsonValue?> )
+//     return new [[JsonValue value <- [[JsValue _object <- v]]]]
 
-def JV ( var v : array<JsonValue?> )
-    return new [[JsonValue value <- [[JsValue _array <- v]]]]
+// def JV ( var v : array<JsonValue?> )
+//     return new [[JsonValue value <- [[JsValue _array <- v]]]]
 
 
 def into_table(var src: array<tuple<auto(K); auto(V)>>): table<K; V>
@@ -109,6 +110,7 @@ def main
         var Element: JsonValue?
             
         rule(Array as a) <|
+            print("Parsed element\n")
             return <- JV(a)
 
         // rule(Object as o) <|
@@ -127,7 +129,9 @@ def main
         // If items are present (not []), then no trailing comma is allowed
 
         rule("[", WS, MB(ElementList) as list, "]", WS) <|
+            print("Parsed Array\n")
             return <- [[array<JsonValue?>]] if list |> empty
+            print("List non empty\n")
             return <- list[0] // Take the value from optional
 
 
@@ -137,6 +141,7 @@ def main
         // If the list is not empty, there must always be a final one
 
         rule(*CommaSeparatedElements as els, Element as last) <|
+            print("Parsed element list\n")
             els |> push <| last
             return <- els
 
@@ -146,6 +151,7 @@ def main
         // Helper to shave off commas
 
         rule(Element as e, ",", WS) <|
+            print("Parsed comma sep\n")
             return <- e
 
 
@@ -185,6 +191,7 @@ def main
         var Value: JsonValue?
 
         rule("true", WS) <|
+            print("Parsed true\n")
             return <- JV(true)
 
         // rule("false", WS) <|
@@ -197,10 +204,18 @@ def main
         //     return <- JV(d)
 
         rule(string_ as s, WS) <|  // <- builtin string_ rule
+            print("Parsed sring\n")
             return <- JV(s)
 
 
 
     var parser <- [[jsonParser]] 
-    parser.input = "[true, \"123\"]"
-    return <- parser |> parse_JsonValue()
+    parser.input = "[\"123\"]"
+
+    var result <- parser |> parse_JsonValue()
+
+    var r <- parser |> parse_JsonValue()
+
+    print ("{result.value |> write_json}\n")
+
+    return
