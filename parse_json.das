@@ -99,14 +99,14 @@ def into_table(var src: array<tuple<auto(K); auto(V)>>): table<K; V>
 def main
 
     parse json
-        let JsonValue: JsonValue?
+        var JsonValue: JsonValue?
 
         rule(WS, Element as e, EOF) <|
             return <- e
 
 
 
-        let Element: JsonValue?
+        var Element: JsonValue?
             
         rule(Array as a) <|
             return <- JV(a)
@@ -121,7 +121,7 @@ def main
 
 
 
-        let Array: array<JsonValue?>
+        var Array: array<JsonValue?>
 
         // Optional element list;
         // If items are present (not []), then no trailing comma is allowed
@@ -131,7 +131,7 @@ def main
             return <- list[0] // Take the value from optional
 
 
-        let ElementList: array<JsonValue?>
+        var ElementList: array<JsonValue?>
 
         // Multiple (possibly none) comma-separated elements followed by the final one
         // If the list is not empty, there must always be a final one
@@ -141,7 +141,7 @@ def main
             return <- els
 
 
-        let CommaSeparatedElements: JsonValue?
+        var CommaSeparatedElements: JsonValue?
 
         // Helper to shave off commas
 
@@ -151,7 +151,7 @@ def main
 
 
 
-        // let Object: table<string; JsonValue?>
+        // var Object: table<string; JsonValue?>
 
         // rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
         //     var empty: table<string; JsonValue?>
@@ -159,20 +159,20 @@ def main
         //     return <- list[0] |> into_table
         
 
-        // let MappingList: array<tuple<string; JsonValue?>>
+        // var MappingList: array<tuple<string; JsonValue?>>
 
         // rule(*CommaSeparatedMappings as els, Mapping as last) <|
         //     els |> push <| last
         //     return <- els
 
 
-        // let CommaSeparatedMappings: tuple<string; JsonValue?>
+        // var CommaSeparatedMappings: tuple<string; JsonValue?>
 
         // rule(Mapping as m, ",", WS) <|
         //     return <- m
 
 
-        // let Mapping: tuple<string; JsonValue?>
+        // var Mapping: tuple<string; JsonValue?>
 
         // rule(stirng_ as s, WS, ":", WS, Element as e) <|
         //     return <- [[auto s, e]]
@@ -182,7 +182,7 @@ def main
 
 
 
-        let Value: JsonValue?
+        var Value: JsonValue?
 
         rule("true", WS) <|
             return <- JV(true)
@@ -202,5 +202,5 @@ def main
 
 
     var parser <- [[jsonParser]] 
-    parser.input = "\{ \"key\": \"value\" \}"
+    parser.input = "[true, \"123\"]"
     return <- parser |> parse_JsonValue()
