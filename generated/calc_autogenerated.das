@@ -15,7 +15,7 @@ require daslib/json public
 struct Parser
     add_cache: table<int; Result>
 
-    input: string
+    input: array<uint8>
     index: int
 
 
@@ -25,29 +25,32 @@ def mark(parser: Parser): int
 
 def reset(var parser: Parser; pos: int)
     parser.index = pos
-    parser
 
 
-def matches(var parser: Parser; template_: string): bool
-    // skip_whitespace()
+def matches(var parser: Parser; template_: string; strlen: int): bool
+    var mark <- parser |> mark
 
-    with parser
-        var st = input |> slice(index)
-        if !st |> starts_with(template_)
-            return false
-        parser |> move(template_ |> length)
-        return true
+    // Not sufficient supply of charachters in the input
+    return false if parser.input |> length < mark + strlen
+
+    for i in range(strlen)
+        var template_char = unsafe(template_ |> character_uat(i) ) |> uint8()
+        var parser_input = parser.input[i + mark]
+        return false if template_char != parser_input
+
+    parser |> move(strlen)
+    return true
 
 
 typedef Result = tuple<success:bool; value:int; endpos:int>;
 
 
-def move(var parser: Parser; offset : int) 
+def move(var parser: Parser; offset: int)
     parser.index += offset
 
 
 def parse_num(var parser: Parser): Result
-    return [[Result]] if !parser |> matches("1")
+    return [[Result]] if !parser |> matches("1", "1" |> length)
 
     var mark <- parser |> mark
 
@@ -70,12 +73,12 @@ def parse_primary(var parser: Parser): Result
     var pos_1 <- parser |> mark
 
     var blk = $ <| 
-        return [[Result]] if !parser |> matches("(")
+        return [[Result]] if !parser |> matches("(", 1)
 
         var v1 <- parser |> parse_add
         return [[Result]] if !v1.success
         
-        return [[Result]] if !parser |> matches(")")
+        return [[Result]] if !parser |> matches(")", 1)
 
         // Here goes action perhaps?
         return [[Result true, v1.value, parser |> mark]]
@@ -118,6 +121,7 @@ def parse_add(var parser: Parser): Result
             res = newres
             add_cache[mark] = res
 
+        parser |> reset <| res.endpos
         return res
             
     
@@ -131,7 +135,7 @@ def parse_add_inner(var parser: Parser): Result
             var add_1 <- parser |> parse_add
             return [[Result]] if !add_1.success
                 
-            return [[Result]] if !parser |> matches("+")
+            return [[Result]] if !parser |> matches("+", 1)
 
             var prim_1 <- parser |> parse_primary
             return [[Result]] if !prim_1.success
@@ -172,7 +176,10 @@ def parse_add_inner(var parser: Parser): Result
 [export]
 def main
     var parser <- [[Parser]]
-    parser.input = "1+1+1+1"
+    // parser.input = array<uint8>("1+1+1+1")
+
+    for ch in "1+1+1"
+        parser.input |> push <| (ch |> uint8())
     
     var result <- parser |> parse_add
     
