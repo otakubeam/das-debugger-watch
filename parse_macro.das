@@ -12,8 +12,6 @@ require daslib/macro_boost
 require daslib/ast_boost
 require daslib/defer
 
-require daslib/debug
-
 require parser_generator
 require meta_ast
 
@@ -169,7 +167,7 @@ class ParseMacro : AstCallMacro
     //! Implements `parse` macro.
     //! Usage:
     //!    parse expression
-    //!        let add : int
+    //!        var add : int
     //!    
     //!        rule(add as a, "+", mul as m) <|
     //!            return a + m
@@ -180,13 +178,13 @@ class ParseMacro : AstCallMacro
     //!        rule(mul as m) <|
     //!            return m
     //!
-    //!        let mul: int
+    //!        var mul: int
     //!        ...
     //!
     //!    let my_var = expresssion("1+2")
     //!
-    //! - The pattern is let <rule_name>: <type> followed by a series of calls to `rule` function
-    //! - The typing in `let add: int` is significant and will not work otherwise.
+    //! - The pattern is var <rule_name>: <type> followed by a series of calls to `rule` function
+    //! - The typing in `var add: int` is significant and will not work otherwise.
     //! - The last argument of the rule function is a semantic action that will be exeuted
     //!     upon the matching of the rule. Names used in actions are defined with 
     //!     `<rule> as <name>` syntax. Actions must return the type as defined in let expression.

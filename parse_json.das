@@ -12,28 +12,9 @@ require daslib/json
 
 options debugger
 require daslib/debug
+require daslib/ast_debug
 
 require parse_macro
-
-// Taken from daslib/json
-
-
-// struct JsonValue
-//     //! JSON value, wraps any JSON element.
-//     value : JsValue
-
-
-
-// variant JsValue
-//     //! Single JSON element.
-//     _object : table<string; JsonValue?>
-//     _array  : array<JsonValue?>
-//     _string : string
-//     _number : double
-//     _bool   : bool
-//     _null   : void?
-
-
 
 // Grammar:
 //
@@ -62,30 +43,6 @@ require parse_macro
 //
 
 
-// Creation helpers
-
-
-// def JV ( v : string )
-//     //! Creates `JsonValue` out of value.
-//     return new [[JsonValue value <- [[JsValue _string = v]]]]
-
-// def JV ( v : double )
-//     return new [[JsonValue value <- [[JsValue _number = v]]]]
-
-// def JV ( v : bool )
-//     return new [[JsonValue value <- [[JsValue _bool = v]]]]
-
-// def JVNull
-//     //! Creates `JsonValue` representing `null`.
-//     return new [[JsonValue value <- [[JsValue _null = null]]]]
-
-// def JV ( var v : table<string;JsonValue?> )
-//     return new [[JsonValue value <- [[JsValue _object <- v]]]]
-
-// def JV ( var v : array<JsonValue?> )
-//     return new [[JsonValue value <- [[JsValue _array <- v]]]]
-
-
 def into_table(var src: array<tuple<auto(K); auto(V)>>): table<K; V>
     var result: table<K; V>
     for elem in src
@@ -103,6 +60,7 @@ def main
         var JsonValue: JsonValue?
 
         rule(WS, Element as e, EOF) <|
+            print("Parsed json\n")
             return <- e
 
 
@@ -113,8 +71,9 @@ def main
             print("Parsed element\n")
             return <- JV(a)
 
-        // rule(Object as o) <|
-        //     return <- JV(o)
+        rule(Object as o) <|
+            print("Parsed object 2\n")
+            return <- JV(o)
 
         rule(Value as v) <|
             return <- v
@@ -157,31 +116,33 @@ def main
 
 
 
-        // var Object: table<string; JsonValue?>
+        var Object: table<string; JsonValue?>
 
-        // rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
-        //     var empty: table<string; JsonValue?>
-        //     return <- empty if list |> empty
-        //     return <- list[0] |> into_table
+        rule("\{", WS, MB(MappingList) as list, "\}", WS) <|
+            print("Parsed object\n")
+            var empty: table<string; JsonValue?>
+            return <- empty if list |> empty
+            print("Here\n")
+            return <- list[0] |> into_table
         
 
-        // var MappingList: array<tuple<string; JsonValue?>>
+        var MappingList: array<tuple<string; JsonValue?>>
 
-        // rule(*CommaSeparatedMappings as els, Mapping as last) <|
-        //     els |> push <| last
-        //     return <- els
-
-
-        // var CommaSeparatedMappings: tuple<string; JsonValue?>
-
-        // rule(Mapping as m, ",", WS) <|
-        //     return <- m
+        rule(*CommaSeparatedMappings as els, Mapping as last) <|
+            els |> push <| last
+            return <- els
 
 
-        // var Mapping: tuple<string; JsonValue?>
+        var CommaSeparatedMappings: tuple<string; JsonValue?>
 
-        // rule(string_ as s, WS, ":", WS, Element as e) <|
-        //     return <- [[tuple<string; JsonValue?> s, e]]
+        rule(Mapping as m, ",", WS) <|
+            return <- m
+
+
+        var Mapping: tuple<string; JsonValue?>
+
+        rule(string_ as s, WS, ":", WS, Element as e) <|
+            return <- [[auto s, e]]
 
 
 
@@ -200,8 +161,8 @@ def main
         rule("null", WS) <|
             return <- JVNull()
             
-        // rule(double_ as d, WS) <|  // <- builtin double_ rule
-        //     return <- JV(d)
+        rule(double_ as d, WS) <|  // <- builtin double_ rule
+            return <- JV(d)
 
         rule(string_ as s, WS) <|  // <- builtin string_ rule
             print("Parsed sring\n")
@@ -210,11 +171,11 @@ def main
 
 
     var parser <- [[jsonParser]] 
-    parser.input = "[\"123\", true,[], [[true]], \"123\"]"
+    parser.input = "[\"123\", true,[], \{\}, \{\"hello\" : true, \"less\": \"more\"\}, [[true]], \"123\"]"
+
+    //parser.input = "\{\"a\" : 123.53, \"b\": true \}"
 
     var result <- parser |> parse_JsonValue()
-
-    var r <- parser |> parse_JsonValue()
 
     print ("{result.value |> write_json}\n")
 
