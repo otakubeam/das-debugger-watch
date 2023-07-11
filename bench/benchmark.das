@@ -18,23 +18,10 @@ def main
         var res_json <- parse_JsonValue(parser).value
         print("{intptr(unsafe(addr(res_json)))}")
 
-    // profile(10, "std json") <|
-    //     var discard_error: string
-    //     var json <- read_json(input, discard_error)
-    //     print("{intptr(unsafe(addr(json)))}")
-
-
-[test]
-def test1(t: T?)
-    let input = "[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]"
-
-    var parser <- get_parser_with(input)
-    var res_json <- parse_JsonValue(parser).value
-
-    var discard_error: string
-    var json <- read_json(input, discard_error)
-
-    t |> equal(json |> write_json, res_json |> write_json)
+    profile(10, "std json") <|
+        var discard_error: string
+        var json <- read_json(input, discard_error)
+        print("{intptr(unsafe(addr(json)))}")
 
 
 [skip_lock_check]

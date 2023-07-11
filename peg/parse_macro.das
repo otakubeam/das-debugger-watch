@@ -15,6 +15,9 @@ require daslib/defer
 require peg/parser_generator
 require peg/meta_ast
 
+// To avoid overflow during template expansion
+options stack = 10000000
+
 
 struct MacroRule
     [[do_not_delete]] rule: ExprLet? // from let rule: type
@@ -40,16 +43,29 @@ def add_name(var rule: Rule; var name: string)
             abort("Unreachable")
 
 
-def into_terminal(var expr: ExpressionPtr): Terminal
+def into_terminal(var expr: ExpressionPtr): tuple<int;int>
     if expr is ExprConstInt
         // Single character '\n', '1', 'a'
-        return <- [[Terminal literal = "{expr as ExprConstInt}"]]
+
+        let v = (expr as ExprConstInt).value
+        return <- [[auto v, v]]
 
     elif expr is ExprCall && (expr as ExprCall).name == "interval"
         // Range of charachters '1'..'9'
-        let left = (expr as ExprCall).arguments[0]
-        let right = (expr as ExprCall).arguments[1]
-        return <- [[Terminal range_ = [[auto left, right]]]]
+
+        var inscope left_exp <- expr as ExprCall.arguments[0]
+        var inscope right_exp <- (expr as ExprCall).arguments[1]
+
+        // macro_verify(left_exp is ExprConstInt, null, "Range end should be integer constants");
+        // macro_verify(right_exp is ExprConstInt, null, "Range end should be integer constants")
+
+        var left <- (left_exp as ExprConstInt).value
+        var right <- (right_exp as ExprConstInt).value
+
+        return <- [[auto left, right]]
+
+    abort("Unreachable `into_terminal`")
+    return <- [[auto 0, 0]]
 
 
 [macro_function]
@@ -80,12 +96,18 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
         return <- new [[Rule_ rule <- t, name <- as_expr.name |> string()]]
 
     elif expr is ExprAsVariant && ((expr as ExprAsVariant).value is ExprPtr2Ref)
-        // Optional rule (MB) -- zero or one
         var as_expr <- expr as ExprAsVariant
 
         var subrule = (as_expr.value as ExprPtr2Ref).subexpr |> into_rule_
         subrule.name := as_expr.name
         return <- new [[Rule_ rule <- [[Rule maybe_repeat <- subrule ]]]]
+
+
+    elif expr is ExprAsVariant && ((expr as ExprAsVariant).value is ExprStringBuilder)
+        var as_expr <- expr as ExprAsVariant
+        var subrule = (as_expr.value as ExprStringBuilder).elements[0] |> into_rule_
+        subrule.name := as_expr.name
+        return <- new [[Rule_ rule <- [[Rule text_extraction <- subrule]]]]
 
 
     elif expr is ExprAsVariant
@@ -97,7 +119,7 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         var rule: Rule_? <- into_rule_(as_expr.value)
         rule.name = as_expr.name |> string()
-        print("{rule}\n")
+        //print("{rule}\n")
         return <- rule
 
 
@@ -111,6 +133,8 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal whitespace = null]]]]]]
         elif name == "EOF"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal EOF = null]]]]]]
+        elif name == "any"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal any = null]]]]]]
         else
             return <- new [[Rule_ rule <- [[Rule nonterminal <- name]]]]
 
@@ -141,7 +165,7 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
     elif expr is ExprOp1 && (expr as ExprOp1).op == "!"
         // Negaitve Lookahead rule (!) -- assert unable to match the rule, without advancing
 
-        var subrule = (expr as ExprCall).arguments[0] |> into_rule_
+        var subrule = (expr as ExprOp1).subexpr |> into_rule_
         return <- new [[Rule_ rule <- [[Rule not_rule = subrule ]]]]
 
     elif expr is ExprCall && (expr as ExprCall).name == "set"
@@ -149,20 +173,14 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         var set = expr as ExprCall
 
-        var terms: array<Terminal>
+        var terms: array<tuple<int;int>>
 
         for arg in set.arguments
             terms |> push (arg |> into_terminal)
 
-        print("Hello world\n")
-
-        return <- new [[Rule_
-
-        pass
-
+        return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal charset <- terms]] ]] ]]
 
     elif expr is ExprOp1 && (expr as ExprOp1).op == "+"
-        abort("TODO: Unreachable +")
         // Several (+) -- one or more
 
         var subrule = (expr as ExprOp1).subexpr |> into_rule_
@@ -171,10 +189,7 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
     elif expr is ExprConstInt
         abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
 
-
-    expr |> debug_expression |> print
-    abort("TODO: Unreachable here")
-
+    abort("TODO: Unreachable")
     return <- new [[Rule_]]
 
 

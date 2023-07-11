@@ -24,14 +24,17 @@ variant Terminal
     // Literal: "Hello world"
     lit: string 
 
-    // Range: [0-9]
-    range_: tuple<int; int> 
+    // Range: set('0'..'9', 'a'..'z')
+    charset: array<tuple<int; int>>
 
     // Name of the result (int)
     number: string
 
     // WS <- [' ', '\n', '\t']*
     whitespace: void?
+
+    // Any charachter
+    any: void?
 
     // End of file (!.)
     EOF: void? 
@@ -59,6 +62,9 @@ variant Rule
     terminal: Terminal 
     nonterminal: Nonterminal
     bound_nonterminal: tuple<Nonterminal; string>
+
+    // Extracts text from a (nonterminal) rule for custom interpretation
+    text_extraction: Rule_?  // "{digits}" as ds
 
     // Do not consume the input
     not_rule: Rule_?     // !Rule
