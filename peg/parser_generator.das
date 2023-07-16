@@ -9,14 +9,15 @@ module parser_generator
 require daslib/match public
 require daslib/strings
 require daslib/ast
-require daslib/fio
 require daslib/rtti
+require daslib/math
 require daslib/ast_boost
 require daslib/utf8_utils
+require daslib/macro_boost
 require daslib/templates_boost
 
 require peg/meta_ast
-
+require detail/helpers
 
 struct ParserGenerator
     // Provides information to generate unique names
@@ -40,63 +41,31 @@ struct ParserGenerator
     // The constructed type for the parser
     parser_type: TypeDeclPtr
 
+    // Enable debug output for library development
+    debug: bool
 
-def abort(message: string)
-    print("{message}\n")
-    unsafe { exit(1); }
+    // Whether or not to emit code to trace the execution
+    tracing: bool
 
+    // Output ansi escape sequences in trace
+    color_output: bool
 
-def iota
-    return <- generator<int>() <|
-        var i: int = 0
-        while true
-            i += 1
-            return false if i == 0 else yield i
+    // Check for cut operator on fail
+    cut_operator: bool
 
-
-// Array is asserted to be valid utf-8 at the beginning of the parsing.
-def public get_next_character(utf8_string: array<uint8>; var index: int&): int
-    var codepoint = 0
-    var state = 0u
-
-    while true // Guaranteed to terminate
-        let byte = utf8_string[index] |> int()
-        index += 1
-        let type_ = s_utf8d[byte]
-        codepoint = (byte & int(0x3F)) | (codepoint << 6)
-        state = s_utf8d[256u + state + type_]
-        return codepoint if state == UTF8_ACCEPT
-
-    return 0
+    // Print generated inner parsing functions
+    print_generated: bool
 
 
-def public decode_utf8_codepoint(utf8_data: array<uint8>; var index: int): tuple<res:int; len:int>
-    var byte1 = utf8_data[index] |> uint()
-
-    if (byte1 & 0x80u) == 0u
-        // Single-byte codepoint
-        return [[auto byte1 |> int(), 1]]
-    elif (byte1 & 0xE0) == 0xC0
-        // Two-byte codepoint
-        var byte2 = utf8_data[index + 1] |> uint()
-        var val = ((byte1 & 0x1F) << 6u) | (byte2 & 0x3F)
-        return [[auto val |> int(), 2]]
-    // elif (byte1 & 0xF0) == 0xE0
-    //     // Three-byte codepoint
-    //     var byte2 = utf8_data[index + 1]
-    //     var byte3 = utf8_data[index + 2]
-    //     var val = ((byte1 & 0x0F) << 12) | ((byte2 & 0x3F) << 6) | (byte3 & 0x3F)
-    //     return [[auto val, 3]]
-    // elif (byte1 & 0xF8) == 0xF0
-    //     // Four-byte codepoint
-    //     var byte2 = utf8_data[index + 1]
-    //     var byte3 = utf8_data[index + 2]
-    //     var byte4 = utf8_data[index + 3]
-    //     var val = ((byte1 & 0x07) << 18) | ((byte2 & 0x3F) << 12) | ((byte3 & 0x3F) << 6) | (byte4 & 0x3F)
-    //     return [[auto val, 4]]
+def accept_option(var gen: ParserGenerator; opt: string)
+    if opt == "tracing"
+        gen.tracing = true
+    elif opt == "print_generated"
+        gen.print_generated = true
+    elif opt == "color"
+        gen.color_output = true
     else
-        // Invalid UTF-8 sequence
-        return [[auto -1, 0]]
+        abort("Unsupported option `{opt}` passed to the parser generator")
 
 
 def rule_left_recursive(name: string; rule: Rule): bool
@@ -118,6 +87,9 @@ def rule_left_recursive(name: string; rule: Rule): bool
             return true if rule_left_recursive(name, rule_.rule)
 
         if [[Rule and_rule = $v(rule_)]]
+            return true if rule_left_recursive(name, rule_.rule)
+
+        if [[Rule option = $v(rule_)]]
             return true if rule_left_recursive(name, rule_.rule)
 
         if [[Rule nonterminal = $v(name_)]]
@@ -148,13 +120,29 @@ def generate_wrapper(var gen: ParserGenerator)
     var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         var mark = parser.index
 
-        if parser.$f(cache_table) |> key_exists(parser.index)
+        if $v(gen.tracing)
+            parser |> log_plain <| "Entered function parse_{$v(rule_name) |> bold}"
+            parser.tabs++
+
+        if parser.$f(cache_table) |> key_exists(parser.index) && !parser.error_reporting
             var result := parser.$f(cache_table)[parser.index]
-            parser.index = result.endpos
+
+            if $v(gen.tracing)
+                parser |> log_info <| "Got result from cache {parser.index}"
+                parser.tabs--
+
+            if result.success // Change the state only on success
+                parser.index = result.endpos
+
             return <- result
 
         var result <- $c(inner_parsing_fun)(parser)
         parser.$f(cache_table)[mark] := result
+
+        if $v(gen.tracing)
+            parser |> log_info <| "Placing result {result} to cache {mark}"
+            parser.tabs--
+            parser |> log_info <| "Matched from {mark} to {parser.index}"
 
         return <- result
 
@@ -173,10 +161,19 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
     var inscope wrapper_fun <- qmacro_function("parse_{rule_name}") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         var mark = parser.index
 
+        if $v(gen.tracing)
+            parser |> log_plain <| "Entered function parse_{$v(rule_name) |> bold}"
+            parser.tabs++
+
         with parser
-            if $i(cache_table) |> key_exists(index)
+            if $i(cache_table) |> key_exists(index) && !parser.error_reporting
                 var result = $i(cache_table)[index]
-                parser.index = result.endpos
+                if result.success // Change the state only on success
+                    parser.index = result.endpos
+
+                if $v(gen.tracing)
+                    parser.tabs--
+
                 return result
 
             // Build new cache entry from scratch
@@ -196,6 +193,8 @@ def generate_wrapper_leftrec(var gen: ParserGenerator)
                 res = newres
                 $i(cache_table)[mark] = res
 
+            if $v(gen.tracing)
+                parser.tabs--
 
             parser.index = res.endpos
             return res
@@ -228,6 +227,14 @@ def generate_parser_class(var gen: ParserGenerator; parser_name: string)
 
     s |> add_structure_field_new("input", qmacro_type(type<array<uint8>>))
     s |> add_structure_field_new("index", qmacro_type(type<int>))
+    s |> add_structure_field_new("tabs", qmacro_type(type<int>))
+    s |> add_structure_field_new("color_output", qmacro_type(type<bool>))
+    s |> add_structure_field_new("error_reporting", qmacro_type(type<bool>))
+    // The longest correctly parsed prefix in the grammar, for error reporting
+    s |> add_structure_field_new("longest_prefix", qmacro_type(type<int>))
+    // Supress errors flag is set when entering modifier like MB or *
+    s |> add_structure_field_new("suppress_errors", qmacro_type(type<bool>))
+    s |> add_structure_field_new("errors", qmacro_type(type<array<ParsingError>>))
 
     s.flags |= StructureFlags skipLockCheck
 
@@ -278,9 +285,9 @@ def generate_result_types(var gen: ParserGenerator)
     // Also add for types for the contexts of * and ?
     // They can be anything, they are used for the short-circuiting out of the current context
 
-    gen.return_types["__repetition__"] := make_default_type_decl()
-    gen.return_types["__option__"] := make_default_type_decl()
-    gen.return_types["__PEEK__"] := make_default_type_decl()
+    gen.return_types["__repetition__"] |> move_new <| make_default_type_decl()
+    gen.return_types["__option__"] |> move_new <| make_default_type_decl()
+    gen.return_types["__PEEK__"] |> move_new <| make_default_type_decl()
 
 
 
@@ -288,16 +295,14 @@ def generate(var gen: ParserGenerator; var def_: Definition)
     gen.current_context = def_.name
 
     var inscope function_body <- gen |> generate(def_.rule)
-    var inscope return_type <- gen.return_types[def_.name] |> clone_type
+    var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
 
     var inscope fun <- qmacro_function("parse_{def_.name}_inner") <| $ (var parser: $t(gen.parser_type)): $t(return_type)
         $b(function_body)
         return <- [[$t(return_type)]]
 
-    // XXX: disabling locks for the entire function
-    fun.moreFlags |= MoreFunctionFlags skipLockCheck
-
-    //fun |> describe |> print
+    if gen.print_generated
+        fun |> describe |> print
     compiling_module() |> add_function(fun)
 
     if rule_left_recursive(def_.name, def_.rule)
@@ -312,140 +317,26 @@ def generate_grammar(var gen: ParserGenerator; var gram: array<Definition>; name
     for rule in gram
         gen |> set_rule_type(rule.name |> string(), rule.type_)
 
-    // In this order: class depends on types, methods depend on class
     gen |> generate_result_types
 
     gen |> generate_parser_class(name)
-
-    gen |> generate_parser_methods
 
     for def_ in gram
         gen |> generate(def_)
 
 
-def generate_parser_methods(var gen: ParserGenerator)
-    var inscope eof <- qmacro_function("reached_EOF") <| $(var parser: $t(gen.parser_type)): bool
-        return parser.input |> length <= parser.index
-
-    var inscope skip_whitespace <- qmacro_function("skip_whitespace") <| $(var parser: $t(gen.parser_type))
-        while parser |> get_current_char |> is_white_space
-            parser.index += 1
-
-    var inscope get_current_char <- qmacro_function("get_current_char") <| $(var parser: $t(gen.parser_type))
-        return -1 if parser.input |> length <= parser.index
-        return parser.input[parser.index] |> int()
-
-    // TODO: UTF-8
-    // var inscope get_current_char <- qmacro_function("get_current_char") <| $(var parser: $t(gen.parser_type))
-    //     return [[auto -1, 0]] if parser.input |> length <= parser.index
-    //     return decode_utf8_codepoint(parser.input, parser.index)
-    // var inscope peek_current_char <- qmacro_function("peek_current_char") <| $(var parser: $t(gen.parser_type))
-    //     return -1 if parser.input |> length <= parser.index
-    //     return decode_utf8_codepoint(parser.input, parser.index).res
-
-    var inscope match_decimal_literal <- qmacro_function("match_decimal_literal") <| $(var parser: $t(gen.parser_type)): tuple<success:bool;value:int;endpos:int>
-        //! Simple lexing of decimal integers, doesn't check for overflow
-
-        if !parser |> get_current_char |> is_number
-            // Can't use typedef in this context, sadly
-            return [[tuple<success:bool;value:int;endpos:int>]]
-
-        var result = 0
-
-        while parser |> get_current_char |> is_number
-            result *= 10
-            result +=  parser |> get_current_char - '0'
-            parser.index += 1
-
-        return [[auto true, result, parser.index]]
-
-    var inscope match_string_literal <- qmacro_function("match_string_literal") <| $ (var parser: $t(gen.parser_type)): tuple<success:bool; string>
-        //! Tries to match everything inside ""
-
-        // Define buffer to store string literal characters
-        var inscope buffer: array<uint8>
-
-        var current_char = parser |> get_current_char
-
-        // If the current character is not a double quote, the rule is not a string
-        return [[auto false, ""]] if current_char != '"'
-
-        parser.index += 1
-        current_char = parser |> get_current_char
-
-        while current_char != '"' && !parser |> reached_EOF
-            buffer |> push(current_char |> uint8())
-            parser.index += 1
-            current_char = parser |> get_current_char
-
-        // If we've reached EOF file without finding a closing quote
-        return [[auto false, ""]] if parser |> reached_EOF
-
-        parser.index += 1
-        return [[auto true, buffer |> string()]]
-
-    var inscope match_double_literal <- qmacro_function("match_double_literal") <| $ (var parser: $t(gen.parser_type)): tuple<success:bool; double>
-        //! Matches doubles in the form of [-+]? [0-9]* .? [0-9]+ ([eE] [-+]? [0-9]+)?
-        //! The number is not checked to be representable as defined in IEEE-754
-
-        var current_char = parser |> get_current_char
-
-        if !current_char |> is_number && current_char != '+' && current_char != '-'
-            return <- [[auto false, 0.0 |> double()]]
-
-        var inscope buffer: array<uint8>
-
-        if current_char == '-' || current_char == '+'
-            buffer |> push(current_char |> uint8())
-            parser.index += 1
-            current_char = parser |> get_current_char
-
-        // Add everything up to '.' to the buffer
-        while current_char |> is_number || current_char == '.'
-            buffer |> push(current_char |> uint8())
-            parser.index += 1
-            current_char = parser |> get_current_char
-
-
-        // Match exponent part
-        if current_char == 'e' || current_char == 'E'
-            buffer |> push(current_char |> uint8())
-            parser.index += 1
-            current_char = parser |> get_current_char
-
-            // Check for '-' or '+' after 'e' or 'E'
-            if current_char == '-' || current_char == '+'
-                buffer |> push(current_char |> uint8())
-                parser.index += 1
-                current_char = parser |> get_current_char
-
-            // Continue appending digits after 'e' or 'E'
-            while current_char |> is_number
-                buffer |> push(current_char |> uint8())
-                parser.index += 1
-                current_char = parser |> get_current_char
-
-        return [[auto true, buffer |> string() |> double()]]
-
-
-    compiling_module() |> add_function(eof)
-    compiling_module() |> add_function(skip_whitespace)
-    compiling_module() |> add_function(get_current_char)
-    compiling_module() |> add_function(match_decimal_literal)
-    compiling_module() |> add_function(match_string_literal)
-    compiling_module() |> add_function(match_double_literal)
-
-
 def get_rule_type(var gen: ParserGenerator; rule: Rule): TypeDeclPtr
     match rule
         if [[Rule nonterminal = $v(nonterm)]]
-            // TODO: check for leaks
-            var inscope type_ := gen.rule_types[nonterm]
-            return <- type_
+            return <- gen.rule_types[nonterm] |> clone_type
+
+        if [[Rule bound_nonterminal = $v(nonterm)]]
+            return <- gen.rule_types[nonterm._0] |> clone_type
 
         if [[Rule subrule = $v(subrule)]]
             abort("Infer subrule type")
 
+    abort("Unreachable `get_rule_type`")
     return <- [[TypeDeclPtr]]
 
 
@@ -474,20 +365,26 @@ def set_rule_handle(var subrule_: Rule_?; handle: string)
             match term
                 if [[Terminal lit = $v(l) ]]
                     // Something like (*"123" as foo)
-                    abort("Matchint repeated literals is not allowed")
+                    abort("Matching repeated literals is not allowed")
 
                 if [[Terminal charset = $v(r) ]]
-                    // *[1-9] as numbers -- should be possible
-                    abort("Matchint repeated literals is not allowed")
+                    // *[1-9] as numbers
+                    abort("Matching repeated charsets is not allowed -- use text extraction")
 
                 if [[Terminal number = $v(name)]]
                     name = handle
 
                 if [[Terminal whitespace = _]]
-                    abort("Matchint repeated whitespace is not allowed")
+                    abort("Matching repeated whitespace is not allowed")
+
+                if [[Terminal taborspace = _]]
+                    abort("Matching repeated tab or space is not allowed")
 
                 if [[Terminal EOF = _]]
-                    abort("Matchint repeated EOF is not allowed")
+                    abort("Matching repeated EOL is not allowed")
+
+                if [[Terminal EOF = _]]
+                    abort("Matching repeated EOF is not allowed")
 
                 if [[Terminal string_ = $v(name)]]
                     name = handle
@@ -497,39 +394,18 @@ def set_rule_handle(var subrule_: Rule_?; handle: string)
 
             return
 
-        if [[Rule bound_nonterminal = $v(nonterm)]]
-            // Cannot bind several times
-            abort("Unreachable")
-
-        if [[Rule seq = $v(rules)]]
-            abort("Unreachable")
-
-        if [[Rule alt = $v(alts)]]
-            abort("Unreachable")
-
-        if [[Rule maybe_repeat = $v(rule_)]]
-            abort("Unreachable")
-
-        if [[Rule repeat = $v(rule_)]]
-            abort("Unreachable")
-
-        if [[Rule subrule = $v(subrule)]]
-            abort("TODO: set_rule_handle option")
-
-        if [[Rule option = $v(rule_)]]
-            abort("Unreachable")
-
-    abort("Unreachable")
+    abort("Unreachable: `set_rule_handle`")
 
 
 def get_action_block(var alternative: Alternative): ExpressionPtr
     return <- alternative.action
 
 
+// Contract: block is managed externally and will clean up its own memory
 def flatten_block(var blk: ExprBlock?)
     var inscope result : array<ExpressionPtr>
     for e in blk.list
-        result |> emplace <| e
+        result |> emplace_new <| (e |> clone_expression)
     return <- result
 
 
@@ -553,10 +429,11 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             var inscope t  <- qmacro_block <|
                 var $i(varname) <- $c(parse_fun)(parser)
-                return <- [[$t(return_type)]] if !$i(varname).success
+                if !$i(varname).success
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
 
             return <- flatten_block(t as ExprBlock)
-
 
         if [[Rule bound_nonterminal = $v(nonterm)]]
             let name = nonterm._0
@@ -570,245 +447,394 @@ def generate(var gen: ParserGenerator; var rule_: Rule): array<ExpressionPtr>
 
             var inscope t <- qmacro_block <|
                 var $i(varname) <- $c(parse_fun)(parser)
-                return <- [[$t(return_type)]] if !$i(varname).success
+                if !$i(varname).success
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
                 var $i(result_name) <- $i(varname).value
 
             return <- flatten_block(t as ExprBlock)
 
         if [[Rule text_extraction = $v(subrule)]]
-
             var result_handle = subrule.name
+            var i = gen.rule_counter["extract"]++
             var inscope subrule_ <- gen |> generate(subrule.rule)
             var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
-            var i = gen.rule_counter["extract"]++
 
             var inscope t <- qmacro_block <|
-                var $i("ext_pos{i}") = parser.index
+                var $i("ext_pos_{i}") = parser.index
                 $b(subrule_)
-                var $i("str{i}") = unsafe(reinterpret<string> unsafe(addr(parser.input[0])))
-                var $i(result_handle): string <- $i("str{i}") |> slice($i("ext_pos{i}"), parser.index)
+                var $i("str_{i}") = unsafe(reinterpret<string> unsafe(addr(parser.input[0])))
+                var $i(result_handle): string <- $i("str_{i}") |> slice($i("ext_pos_{i}"), parser.index)
+                if $v(gen.tracing)
+                    parser |> log_info <| "Extracted text from the stream: '{$i(result_handle)}'"
 
             return <- flatten_block(t as ExprBlock)
 
         if [[Rule seq = $v(rules)]]
-
             var inscope result: array<ExpressionPtr>
 
             for rule in rules
                 for expr in gen |> generate(rule.rule)
-                    result |> emplace <| expr
+                    result |> emplace_new <| expr
 
             return <- result
 
         if [[Rule alt = $v(alts)]]
-
             var inscope results: array<ExpressionPtr>
 
             for alt, i in alts, iota()
-                results |> emplace_new <| generate_one_alternative(gen, alt, i)
+                results |> emplace_new <| generate_one_alternative(gen, alt, i, alts |> length == 1)
 
             return <- results
 
         if [[Rule maybe_repeat = $v(rule_)]]
-
-            var result_handle = rule_.name
-            var inscope type_decl <- gen |> get_rule_type(rule_.rule)
-
-            if rule_.name == "" // Rule not bound by name, discard result
-                var inscope rule_code <- gen |> with_context("__repetition__") <|
-                    return <- gen |> generate(rule_.rule)
-
-                rule_code |> append_block <| ( qmacro_block <| {
-                    return <- [[$t(make_default_type_decl()) true, 0, parser.index]];
-                } )
-
-                var inscope t <- qmacro_block <|
-                    while true
-                        var res <- invoke <|
-                            $b(rule_code)
-                        break if !res.success
-
-                return <- flatten_block(t as ExprBlock)
-
-	        // Bind result to the provided name
-
-            set_rule_handle(rule_, "temp_name")
-            var inscope rule_code <- gen |> with_context("__repetition__") <|
-                return <- gen |> generate(rule_.rule)
-
-            rule_code |> append_block <| ( qmacro_block <| {
-                $i(result_handle) |> emplace <| temp_name;
-                return <- [[$t(make_default_type_decl())]];
-            } )
-
-            var inscope t <- qmacro_block <|
-                var $i(result_handle) : array<$t(type_decl)>
-
-                while true
-                    var sz = $i(result_handle) |> length
-
-                    invoke <|
-                        $b(rule_code) // Adds an element on success
-
-                    break if sz == $i(result_handle) |> length
-
-            return <- flatten_block(t as ExprBlock)
+            return <- gen |> generate_maybe_repeat(rule_)
 
         if [[Rule not_rule = $v(rule_)]]
-
-            var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
-
-            var inscope rule_code <- gen |> with_context("__PEEK__") <|
-                return <- gen |> generate(rule_.rule)
-
-            var inscope epilogue <- qmacro_block <|
-                return <- [[$t(make_default_type_decl()) true, 0, parser.index]];
-
-            for e in flatten_block(epilogue as ExprBlock)
-                rule_code |> emplace <| e
-
-            var inscope t <- qmacro_block <|
-                var mark = parser.index
-
-                var success = invoke <|
-                    $b(rule_code)
-
-                parser.index = mark
-                return <- [[$t(return_type)]] if success.success
-
-            return <- flatten_block(t as ExprBlock)
+            return <- gen |> generate_not(rule_)
 
         if [[Rule and_rule = $v(rule_)]]
-
-            var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
-
-            var inscope rule_code <- gen |> with_context("__PEEK__") <|
-                return <- gen |> generate(rule_.rule)
-
-            var inscope epilogue <- qmacro_block <|
-                return <- [[$t(make_default_type_decl()) true, 0, parser.index]];
-
-            for e in flatten_block(epilogue as ExprBlock)
-                rule_code |> emplace <| e
-
-            var inscope t <- qmacro_block <|
-                var mark = parser.index
-
-                var success = invoke <|
-                    $b(rule_code)
-
-                parser.index = mark
-                return <- [[$t(return_type)]] if !success.success
-
-            return <- flatten_block(t as ExprBlock)
-
+            return <- gen |> generate_and(rule_)
 
         if [[Rule repeat = $v(rule_)]]
-
-            var result_handle = rule_.name
-            var inscope type_decl <- gen |> get_rule_type(rule_.rule)
-            var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
-
-
-            if rule_.name == "" // Rule not bound by name, discard result
-                var inscope rule_code <- gen |> with_context("__repetition__") <|
-                    return <- gen |> generate(rule_.rule)
-
-                rule_code |> append_block <| ( qmacro_block <| {
-                    return <- [[$t(make_default_type_decl()) true, 0, parser.index]];
-                } )
-
-                var inscope t <- qmacro_block <|
-                    var res1 <- invoke <|
-                        $b(rule_code)
-
-                    return [[$t(return_type)]] if !res1.success
-
-                    while true
-                        var res <- invoke <|
-                            $b(rule_code)
-                        break if !res.success
-
-                return <- flatten_block(t as ExprBlock)
-
-	       // Bind result to the provided name
-
-            set_rule_handle(rule_, "temp_name")
-            var inscope rule_code <- gen |> with_context("__repetition__") <|
-                return <- gen |> generate(rule_.rule)
-
-            rule_code |> append_block <| ( qmacro_block <| {
-                $i(result_handle) |> emplace <| temp_name;
-                return <- [[$t(make_default_type_decl()) true, 0, parser.index]];
-            } )
-
-            var inscope t <- qmacro_block <|
-                var $i(result_handle) : array<$t(type_decl)>
-
-                var res1 <- invoke <|
-                    $b(rule_code)
-
-                return [[$t(return_type)]] if !res1.success
-                $i(result_handle) |> emplace <| res1.value
-
-                while true
-                    var sz = $i(result_handle) |> length
-
-                    invoke <|
-                        $b(rule_code) // Adds an element on success
-
-                    break if sz == $i(result_handle) |> length
-
-            return <- flatten_block(t as ExprBlock)
+            return <- gen |> generate_repeat(rule_)
 
         if [[Rule subrule = $v(subrule)]]
-            // Create a new unnamed subrule for the (...)
-            var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
-            var inscope rule_code <- gen |> generate(subrule.rule)
-
-            var inscope t <- qmacro_block <|
-                var res <- invoke($b(rule_code))
-                return [[$t(return_type)]] if !res.success
-
-            return <- flatten_block(t as ExprBlock)
+            abort("TODO: Suburle")
 
         if [[Rule option = $v(rule_)]]
-            var result_handle = rule_.name
-
-            var inscope type_decl <- gen |> get_rule_type(rule_.rule)
-            var inscope result_type <- gen.return_types[gen.current_context] |> clone_type
-
-            if rule_.name == "" // Rule not bound by name, discard result
-                var inscope rule_code <- gen |> generate(rule_.rule)
-                var inscope t <- qmacro_block <|
-                    var res <- invoke($b(rule_code))
-
-                return <- flatten_block(t as ExprBlock)
-
-	        // Bind result to the provided name
-
-            set_rule_handle(rule_, "temp_name")
-            var inscope rule_code <- gen |> with_context("__option__") <|
-                return <- gen |> generate(rule_.rule)
-
-            var inscope epilogue <- qmacro_block <|
-                $i(result_handle) |> emplace <| temp_name
-                return <- [[$t(make_default_type_decl())]]
-
-            for e in flatten_block(epilogue as ExprBlock)
-                rule_code |> emplace <| e
-
-            var inscope t <- qmacro_block <|
-                var $i(result_handle) : array<$t(type_decl)>
-
-                invoke <|
-                    $b(rule_code)
-
-            return <- flatten_block(t as ExprBlock)
-
+            return <- gen |> generate_option(rule_)
 
     abort("Unreachable")
     return <- [[array<ExpressionPtr>]]
+
+
+def generate_maybe_repeat(var gen: ParserGenerator; var rule_: Rule_?): array<ExpressionPtr>
+    var result_handle = rule_.name
+
+    if rule_.name == "" // Rule not bound by name, discard result
+        var inscope rule_code <- gen |> with_context("__repetition__") <|
+            return <- gen |> generate(rule_.rule)
+
+        rule_code |> append_block_new <| (qmacro_block <| {
+            return_skip_lockcheck <| [[auto true, 0, parser.index]];
+            return <- [[auto true, 0, parser.index]];
+        })
+
+        var inscope t <- qmacro_block <|
+            while true
+                var res <- invoke <|
+                    $b(rule_code)
+                break if !res.success
+
+        return <- flatten_block(t as ExprBlock)
+
+    // Bind result to the provided name
+
+    set_rule_handle(rule_, "temp_name")
+    var inscope type_decl <- gen |> get_rule_type(rule_.rule)
+
+    var inscope rule_code <- gen |> with_context("__repetition__") <|
+        return <- gen |> generate(rule_.rule)
+
+    rule_code |> append_block_new <| (qmacro_block <| {
+        $i(result_handle) |> emplace <| temp_name;
+        return_skip_lockcheck <| [[auto false, 0, 0]];
+        return <- [[auto false, 0, 0]];
+    })
+
+    var inscope t <- qmacro_block <|
+        var $i(result_handle) : array<$t(type_decl)>
+        while true
+            var sz = $i(result_handle) |> length
+            invoke <|
+                $b(rule_code) // Adds an element on success
+            break if sz == $i(result_handle) |> length
+
+    return <- flatten_block(t as ExprBlock)
+
+
+def generate_not(var gen: ParserGenerator; var rule_: Rule_?): array<ExpressionPtr>
+    var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
+
+    var inscope rule_code <- gen |> with_context("__PEEK__") <|
+        return <- gen |> generate(rule_.rule)
+
+    rule_code |> append_block_new <| (qmacro_block <| {
+        return_skip_lockcheck <| [[auto true, 0, parser.index]];
+        return <- [[auto true, 0, parser.index]];
+    })
+
+    var inscope t <- qmacro_block <|
+        var mark = parser.index
+
+        if $v(gen.debug)
+            parser |> log_plain <| "Saved the state for negative assertion: [{mark}, {current}]"
+
+        var success = invoke <|
+            $b(rule_code)
+
+        if $v(gen.debug)
+            parser |> log_plain <| "Resetting the state: [{parser.index}, {parser.current}] -> [{mark}, {current}]"
+
+        parser.index = mark
+
+        if success.success
+            if $v(gen.tracing)
+                parser |> log_fail <| "Assertion successful; failing"
+
+            return_skip_lockcheck <| [[$t(return_type)]]
+            return <- [[$t(return_type)]]
+
+            if $v(gen.tracing)
+                parser |> log_success <| "Assertion failed; continuing"
+
+
+    return <- flatten_block(t as ExprBlock)
+
+
+def generate_and(var gen: ParserGenerator; var rule_: Rule_?): array<ExpressionPtr>
+    var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
+
+    var inscope rule_code <- gen |> with_context("__PEEK__") <|
+        return <- gen |> generate(rule_.rule)
+
+    rule_code |> append_block_new <| (qmacro_block <| {
+        return_skip_lockcheck <| [[auto true, 0, parser.index]];
+        return <- [[auto true, 0, parser.index]];
+    })
+
+    var inscope t <- qmacro_block <|
+        var mark = parser.index
+
+        var success = invoke <|
+            $b(rule_code)
+
+        parser.index = mark
+
+        if !success.success
+            if $v(gen.tracing)
+                parser |> log_fail <| "Assertion failed; failing"
+
+            return_skip_lockcheck <| [[$t(return_type)]]
+            return <- [[$t(return_type)]]
+
+        if $v(gen.tracing)
+            parser |> log_success <| "Assertion successful; continuing"
+
+
+    return <- flatten_block(t as ExprBlock)
+
+
+def generate_repeat(var gen: ParserGenerator; var rule_: Rule_?): array<ExpressionPtr>
+    var result_handle = rule_.name
+    var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
+    var first_result_name = "__repeat_result_{gen.rule_counter["repeat"]++}"
+
+    if rule_.name == "" // Rule not bound by name, discard result
+        var inscope rule_code <- gen |> with_context("__repetition__") <|
+            return <- gen |> generate(rule_.rule)
+
+        rule_code |> append_block_new <| (qmacro_block <| {
+            return_skip_lockcheck <| [[auto true, 0, parser.index]];
+            return <- [[auto true, 0, parser.index]];
+        })
+
+        var inscope t <- qmacro_block <|
+            var $i(first_result_name) <- invoke <|
+                $b(rule_code)
+
+            if !$i(first_result_name).success
+                if parser.error_reporting && !parser.suppress_errors && abs(parser.index - parser.longest_prefix) <= 2
+                    var error = "Error: Expected the rule `" |> red_str($v(gen.color_output))
+                    var terminal = "{$v(rule_ |> describe_rule)}" |> bold
+                    var rest = "` at {parser.index}, around" |> red_str($v(gen.color_output))
+                    var complete_message = "{error}{terminal}{rest}"
+                    parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                return_skip_lockcheck <| [[$t(return_type)]]
+                return <- [[$t(return_type)]]
+
+            while true
+                var res <- invoke <|
+                    $b(rule_code)
+                break if !res.success
+
+        return <- flatten_block(t as ExprBlock)
+
+    // Bind result to the provided name
+
+    set_rule_handle(rule_, "temp_name")
+    var inscope rule_code <- gen |> with_context("__repetition__") <|
+        return <- gen |> generate(rule_.rule)
+
+    rule_code |> append_block_new <| (qmacro_block <| {
+        $i(result_handle) |> emplace <| temp_name;
+        return_skip_lockcheck <| [[auto true, 0, parser.index]];
+        return <- [[auto true, 0, parser.index]];
+    })
+
+    var inscope type_decl <- gen |> get_rule_type(rule_.rule)
+
+    var inscope t <- qmacro_block <|
+        var $i(result_handle) : array<$t(type_decl)>
+        var $i(first_result_name) <- invoke <|
+            $b(rule_code)
+
+        if !$i(first_result_name).success
+            if parser.error_reporting && parser.index == parser.longest_prefix
+                let complete_message = "Expected a `{$v(rule_ |> describe_rule)}` rule at {parser.index}"
+                parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+            return_skip_lockcheck <| [[$t(return_type)]]
+            return <- [[$t(return_type)]]
+
+        $i(result_handle) |> emplace <| ($i(first_result_name).value)
+
+        while true
+            var sz = $i(result_handle) |> length
+            invoke <|
+                $b(rule_code) // Adds an element on success
+            break if sz == $i(result_handle) |> length
+
+    return <- flatten_block(t as ExprBlock)
+
+
+def describe_terminal(term: Terminal): string
+    match term
+        if [[Terminal lit = $v(l) ]]
+            return "{l}"
+
+        if [[Terminal charset = $v(ranges) ]]
+            var sb = build_string <| $ ( writer )
+                for i in range() <| min(ranges |> length, 3) // Don't print too many
+                    var range_ = ranges[i]
+
+                    if range_._0 == range_._1
+                        writer |> write <| " '{range_._0}' "
+                    else
+                        writer |> write <| " '{range_._0}'-'{range_._1}' "
+
+            return "set({sb})"
+
+        if [[Terminal log_msg = $v(message) ]]
+            return "log"
+
+        if [[Terminal number = $v(handle)]]
+            return "number"
+
+        if [[Terminal whitespace = _]]
+            return "whitespace"
+
+        if [[Terminal taborspace = _]]
+            return "taborspace"
+
+        if [[Terminal EOF = _]]
+            return "EOF"
+
+        if [[Terminal EOL = _]]
+            return "EOL"
+
+        if [[Terminal any = _]]
+            return "any"
+
+        if [[Terminal string_ = $v(handle)]]
+            return "string_"
+
+        if [[Terminal double_ = $v(handle)]]
+            return "double_"
+
+    abort("Unreachable")
+    return ""
+
+
+def describe_rule(r: Rule_?): string
+    match r.rule
+        if [[Rule terminal = $v(term)]]
+            return describe_terminal(term)
+
+        if [[Rule nonterminal = $v(nonterm)]]
+            let name = nonterm
+            return "{name}"
+
+        if [[Rule bound_nonterminal = $v(nonterm)]]
+            let name = nonterm._0
+            return "{name}"
+
+        if [[Rule text_extraction = $v(subrule)]]
+            return describe_rule(subrule)
+
+        if [[Rule seq = $v(rules)]]
+            abort("Don't need this")
+
+        if [[Rule alt = $v(alts)]]
+            abort("Don't need this")
+
+        if [[Rule maybe_repeat = $v(rule_)]]
+            return "*{describe_rule(rule_)}"
+
+        if [[Rule not_rule = $v(rule_)]]
+            return "!{describe_rule(rule_)}"
+
+        if [[Rule and_rule = $v(rule_)]]
+            return "PEEK({describe_rule(rule_)})"
+
+        if [[Rule repeat = $v(rule_)]]
+            return "+{describe_rule(rule_)}"
+
+        if [[Rule subrule = $v(subrule)]]
+            abort("Don't need this")
+
+        if [[Rule option = $v(rule_)]]
+            return "?{describe_rule(rule_)}"
+
+    abort("Unreachable")
+    return ""
+
+
+def generate_option(var gen: ParserGenerator; var rule_: Rule_?): array<ExpressionPtr>
+    var result_handle = rule_.name
+
+    if rule_.name == "" // Rule not bound by name, discard result
+        var inscope rule_code <- gen |> with_context("__option__") <|
+            return <- gen |> generate(rule_.rule)
+
+        var inscope t <- qmacro_block <|
+            invoke <|
+                var prev = parser.suppress_errors
+                parser.suppress_errors = true
+                $b(rule_code)
+                parser.suppress_errors = prev
+                return_skip_lockcheck <| [[auto false, 0, 0]]
+                return <- [[auto false, 0, 0]]
+
+        return <- flatten_block(t as ExprBlock)
+
+    // Bind result to the provided name
+
+    set_rule_handle(rule_, "temp_name")
+    var inscope type_decl <- gen |> get_rule_type(rule_.rule)
+    var inscope result_type <- gen.return_types[gen.current_context] |> clone_type
+
+    var inscope rule_code <- gen |> with_context("__option__") <|
+        return <- gen |> generate(rule_.rule)
+
+    rule_code |> append_block_new <| (qmacro_block <| {
+        $i(result_handle) |> emplace <| temp_name;
+        return_skip_lockcheck <| [[auto false, 0, 0]];
+        return <- [[auto false, 0, 0]];
+    })
+
+    var inscope t <- qmacro_block <|
+        var $i(result_handle) : array<$t(type_decl)>
+
+        var prev = parser.suppress_errors
+        parser.suppress_errors = true
+        invoke <|
+            $b(rule_code)
+        parser.suppress_errors = prev
+
+    return <- flatten_block(t as ExprBlock)
 
 
 def with_context(var gen: ParserGenerator; context: string; block_)
@@ -823,12 +849,13 @@ def with_context(var gen: ParserGenerator; context: string; block_)
     return <- r
 
 
-def generate_one_alternative(var gen: ParserGenerator; var alt: Alternative; var i)
-    let block_name = "blk{i}"
-    let parse_pos = "pos{i}"
-    let result  = "res{i}"
+def generate_one_alternative(var gen: ParserGenerator; var alt: Alternative; i; only)
+    let block_name = "blk_{i}"
+    let parse_pos = "pos_{i}"
+    let result  = "res_{i}"
 
     var inscope action <- alt.action
+    var inscope return_type <- gen.return_types[gen.current_context] |> clone_type
     var inscope action_block <- action as ExprBlock |> flatten_block
     var inscope block_contents <- gen |> generate(alt.rule.rule)
 
@@ -841,12 +868,37 @@ def generate_one_alternative(var gen: ParserGenerator; var alt: Alternative; var
     return <- qmacro_block <|
         var parse_pos = parser.index
 
+        if $v(gen.tracing) && !$v(only)
+            parser |> log_info <| "Trying alternative {$v(i)}"
+
+        parser.tabs++
+
+        var cut = false
+
         var $i(result) <- invoke <|
             $b(block_contents)
 
-        return <- $i(result) if $i(result).success
+        if $i(result).success
+            parser.tabs--
+            if $v(gen.tracing) && !$v(only)
+                parser |> log_success <| "Alternative {$v(i)} successful"
+            if $v(gen.debug) && !$v(only)
+                parser |> log_plain <|  "State: index: {parser.index}, current: {parser.current}"
+            return_skip_lockcheck($i(result))
+            return <- $i(result)
+
+        parser.tabs--
+
+        if $v(gen.debug) && !$v(only)
+            parser |> log_plain <| "Resetting index to {parse_pos}, current: {parser.current}"
 
         parser.index = parse_pos
+
+        if cut // Committed but failed; let's fail, too
+            return_skip_lockcheck <| [[$t(return_type)]]
+            return <- [[$t(return_type)]]
+
+
 
 
 def alternative_add_epilogue(var block_contents: array<ExpressionPtr>; var gen: ParserGenerator; var action_block)
@@ -854,18 +906,25 @@ def alternative_add_epilogue(var block_contents: array<ExpressionPtr>; var gen: 
     var inscope return_type <- gen.return_types[gen.current_context] |> clone_type()
 
     var inscope t <- qmacro_block <|
+
+        if $v(gen.debug)
+            parser |> log_plain <| "Executing action"
+
         var val: $t(action_type) <- invoke <| $(): $t(action_type)
             $b(action_block)
 
-        // For some reason I cannot directly return [[Result]]
+        if $v(gen.debug)
+            parser |> log_plain <| "Returning result at index {parser.index}"
+
         var result: $t(return_type) <- [[$t(return_type) true, val, parser.index]]
+        return_skip_lockcheck <| result
         return <- result
 
-    for e in flatten_block(t as ExprBlock)
-        block_contents |> emplace <| e
+    block_contents |> append_block_contents <| t
 
 
 def generate_terminal(var gen: ParserGenerator; var terminal: Terminal): ExpressionPtr
+    var name = "_terminal_result_{gen.rule_counter["terminal"]++}"
     var inscope return_type <- gen.return_types[gen.current_context] |> clone_type()
 
     match terminal
@@ -873,92 +932,212 @@ def generate_terminal(var gen: ParserGenerator; var terminal: Terminal): Express
             var precomputed_length = l |> length
 
             return <- qmacro_block <|
-                return <- [[$t(return_type)]] if !parser |> matches($v(l), $v(precomputed_length))
+                if $v(gen.debug)
+                    parser |> log_plain <| "Trying to match terminal {$v(l) |> escape}"
+
+                if !parser |> matches($v(l), $v(precomputed_length))
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Did not match the terminal `{$v(l) |> escape}`"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix && $v(gen.current_context != "__option__")
+                        var error = "Error: Expected the terminal `" |> red_str($v(gen.color_output))
+                        var terminal = "{$v(l) |> escape}" |> bold
+                        var rest = "` at {parser.index}, around" |> red_str($v(gen.color_output))
+                        var complete_message = "{error}{terminal}{rest}"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+                        // print("{complete_message} '{parser.input |> string() |> at_around(parser.index, 10)}'\n")
+                        // print("{" " |> repeat <| (complete_message |> length - 24)}     ^\n")
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+                if $v(gen.tracing)
+                    parser |> log_success <| "Matched the terminal `{$v(l) |> escape}`"
 
         if [[Terminal charset = $v(ranges) ]]
 
             // Get the currect charachter from the stream
-
             var inscope rule_code: array<ExpressionPtr>
-
-            rule_code |> append_block <| ( qmacro_block <| {
+            rule_code |> append_block_new <| (qmacro_block <| {
                 let current_char = parser |> get_current_char;
-            } )
+            })
 
-            // Check in it is inside any of the ranges
-
-            for r in ranges
-                rule_code |> append_range(r)
+            for r in ranges // Check in it is inside any of the ranges
+                rule_code |> append_block_new <| generate_range_check(r)
 
             // Otherwise return false
-
-            rule_code |> append_block <| ( qmacro_block <| {
+            rule_code |> append_block_new <| (qmacro_block <| {
                 return false;
-            } )
+            })
 
             return <- qmacro_block <|
-                var success = invoke <|
+                var $i(name) = invoke <|
                     $b(rule_code)
 
-                return <- [[$t(return_type)]] if !success
+                if !$i(name)
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Failed the range check for character {parser.index}"
 
-                parser.index += 1
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Expected charset item {$v(terminal |> describe_terminal)} at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
 
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+                parser|> move(1)
+
+        if [[Terminal log_msg = $v(message) ]]
+
+            return <- qmacro_block <|
+                if $v(gen.tracing)
+                    // Respect tabulation
+                    parser |> log_plain <| "Logged: {$e(message)}"
+                else
+                    $e(message) |> print
 
         if [[Terminal number = $v(handle)]]
 
             return <- qmacro_block <|
-                var res : tuple<bool;int;int> = parser |> match_decimal_literal
-                return [[$t(return_type)]] if !res._0
-                var $i(handle) = res._1
+                var $i(name) : tuple<bool;int;int> = parser |> match_decimal_literal
+                if !$i(name)._0
+
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Could not match a decimal number"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message ="Error: Expected a decimal number at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+                if $v(gen.tracing)
+                    parser |> log_success <| "Matched a decimal number {$i(name)._1}"
+
+                var $i(handle) = $i(name)._1
 
         if [[Terminal whitespace = _]]
 
             return <- qmacro_block <|
                 parser |> skip_whitespace
 
+        if [[Terminal taborspace = _]]
+
+            return <- qmacro_block <|
+                parser |> skip_taborspace
+
         if [[Terminal EOF = _]]
 
             return <- qmacro_block <|
-                return <- [[$t(return_type)]] if !parser |> reached_EOF
+                if !parser |> reached_EOF
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Did not match EOF"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Expected EOF at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+        if [[Terminal EOL = _]]
+
+            return <- qmacro_block <|
+                if !parser |> reached_EOL
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Did not match EOL"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Expected EOL at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
 
         if [[Terminal any = _]]
 
             return <- qmacro_block <|
-                return [[$t(return_type)]] if parser |> reached_EOF
+                if parser |> reached_EOF
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Failed matching any, reached EOF"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Unexpected EOF at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+                if $v(gen.tracing)
+                    parser |> log_success <| "Matched any character"
+
                 parser.index += 1
 
+        if [[Terminal commit = _]]
+            return <- qmacro_block <|
+                // Now every failure that checks cut operator will report an error and quit
+                cut = true
 
         if [[Terminal string_ = $v(handle)]]
 
             return <- qmacro_block <|
-                var res <- parser |> match_string_literal
-                return [[$t(return_type)]] if !res.success
-                var $i(handle) : string = res._1
+                var $i(name) <- parser |> match_string_literal
+                if !$i(name).success
+
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Could not match a string"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Expected a string at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+                if $v(gen.tracing)
+                    parser |> log_success <| "Matched a string {$i(name)._1}"
+                var $i(handle) : string = $i(name)._1
 
         if [[Terminal double_ = $v(handle)]]
 
             return <- qmacro_block <|
-                var res <- parser |> match_double_literal
-                return [[$t(return_type)]] if !res.success
-                var $i(handle) = res._1
+                var $i(name) <- parser |> match_double_literal
+                if !$i(name).success
+
+                    if $v(gen.tracing)
+                        parser |> log_fail <| "Could not match a double"
+
+                    if parser.error_reporting && parser.index == parser.longest_prefix
+                        let complete_message = "Error: Expected a double at {parser.index}\n"
+                        parser.errors |> push <| [[ParsingError text=complete_message,index=parser.index]]
+
+                    return_skip_lockcheck <| [[$t(return_type)]]
+                    return <- [[$t(return_type)]]
+
+                if $v(gen.tracing)
+                    parser |> log_success <| "Matched a double {$i(name)._1}"
+                var $i(handle) = $i(name)._1
 
 
     abort("Unreachable")
     return <- [[ExpressionPtr]]
 
 
-def append_range(var rule_code; r)
+def generate_range_check(r)
     if r._0 == r._1
-        rule_code |> append_block <| ( qmacro_block <| {
-            return true if current_char == $v(r._0);
-        } )
+        return <- qmacro_block <|
+            return true if current_char == $v(r._0)
     else
-        rule_code |> append_block <| ( qmacro_block <| {
-            return true if current_char >= $v(r._0) && current_char <= $v(r._1);
-        } )
+        return <- qmacro_block <|
+            return true if current_char >= $v(r._0) && current_char <= $v(r._1)
 
 
-def append_block(var old: array<ExpressionPtr>; var new_code: ExpressionPtr)
-    for e in flatten_block(new_code as ExprBlock)
+def append_block_new(var old: array<ExpressionPtr>; var new_code: ExpressionPtr)
+    for e in (new_code as ExprBlock).list
+        old |> emplace <| e
+    delete new_code
+
+
+def append_block_contents(var old: array<ExpressionPtr>; var new_code: ExpressionPtr&)
+    for e in (new_code as ExprBlock).list
         old |> emplace <| e

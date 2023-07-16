@@ -12,6 +12,9 @@ require daslib/macro_boost
 require daslib/ast_boost
 require daslib/defer
 
+require detail/helpers
+require detail/colors
+
 require peg/parser_generator
 require peg/meta_ast
 
@@ -21,13 +24,19 @@ options stack = 10000000
 
 struct MacroRule
     [[do_not_delete]] rule: ExprLet? // from let rule: type
+    options_: array<string>
     alternatives: array<ExprCall?>
 
 
 [macro_function]
 def add_alternative(var rules: array<MacroRule>; var expr: ExprCall?; prog: ProgramPtr)
-    // macro_verify(expr.name |> string() == "rule", prog, expr.at, "parsing rules alternatives should be called with `rule` name")
-    (rules |> back).alternatives |> emplace <| expr
+    var call_name = expr.name |> string()
+
+    if call_name == "rule"
+        (rules |> back).alternatives |> emplace <| expr
+    elif call_name == "option"
+        var opt = (expr.arguments[0] as ExprVar).name |> string()
+        (rules |> back).options_ |> emplace <| opt
 
 
 [macro_function]
@@ -54,17 +63,17 @@ def into_terminal(var expr: ExpressionPtr): tuple<int;int>
         // Range of charachters '1'..'9'
 
         var inscope left_exp <- expr as ExprCall.arguments[0]
-        var inscope right_exp <- (expr as ExprCall).arguments[1]
+        var inscope right_exp <- expr as ExprCall.arguments[1]
 
-        // macro_verify(left_exp is ExprConstInt, null, "Range end should be integer constants");
-        // macro_verify(right_exp is ExprConstInt, null, "Range end should be integer constants")
+        if !left_exp is ExprConstInt || !right_exp is ExprConstInt
+            transfrom_error(expr.at, "Range ends should be integer constants")
 
         var left <- (left_exp as ExprConstInt).value
         var right <- (right_exp as ExprConstInt).value
 
         return <- [[auto left, right]]
 
-    abort("Unreachable `into_terminal`")
+    transfrom_error(expr.at, "Unknown rule passed to `rule` as argument")
     return <- [[auto 0, 0]]
 
 
@@ -131,10 +140,16 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal number = ""]]]]]]
         elif name == "WS"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal whitespace = null]]]]]]
+        elif name == "TS"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal taborspace = null]]]]]]
         elif name == "EOF"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal EOF = null]]]]]]
+        elif name == "EOL"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal EOL = null]]]]]]
         elif name == "any"
             return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal any = null]]]]]]
+        elif name == "commit"
+            return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal commit = null]]]]]]
         else
             return <- new [[Rule_ rule <- [[Rule nonterminal <- name]]]]
 
@@ -180,6 +195,13 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
 
         return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal charset <- terms]] ]] ]]
 
+    elif expr is ExprCall && (expr as ExprCall).name == "log"
+        // Log partial matching: log("Here goes your message")
+
+        var log = expr as ExprCall
+        var inscope message <- log.arguments[0] |> clone_expression
+        return <- new [[Rule_ rule <- [[Rule terminal <- [[Terminal log_msg <- message ]] ]] ]]
+
     elif expr is ExprOp1 && (expr as ExprOp1).op == "+"
         // Several (+) -- one or more
 
@@ -187,14 +209,21 @@ def into_rule_(var expr: ExpressionPtr): Rule_?
         return <- new [[Rule_ rule <- [[Rule repeat <- subrule ]]]]
 
     elif expr is ExprConstInt
-        abort("\nYour rule contains integers (possibly in the form of '_', please use \"\" for literals)")
+        transfrom_error(expr.at, "Your rule contains integers (possibly in the form of '_', please use \"\" for literals)")
+        return <- new [[Rule_]]
 
-    abort("TODO: Unreachable")
+    transfrom_error(expr.at, "Unknown rule passed to `rule` as argument")
     return <- new [[Rule_]]
 
+def transfrom_error ( at:LineInfo; message:string )
+    macro_error(compiling_program(), at, message)
+    failed_to_transform = true
+
+var private failed_to_transform = false
 
 [macro_function]
 def transform(var rule: MacroRule): Definition
+    failed_to_transform = false
     var name = rule.rule.variables[0].name |> string()
     var inscope type_ <- rule.rule.variables[0]._type
 
@@ -202,14 +231,13 @@ def transform(var rule: MacroRule): Definition
 
     var inscope alternatives: array<Alternative>
 
-    for alt in rule.alternatives                 // alt: ExprCall?
+    for alt in rule.alternatives
         if true // creates scope for inscope
-            var inscope blk: ExpressionPtr <- alt.arguments |> back
-            alt.arguments |> pop
+            var inscope blk: ExpressionPtr <- clone_expression(alt.arguments |> back)
 
             var sequence: array<Rule_?>
 
-            for sequence_elem in alt.arguments
+            for sequence_elem,_ in alt.arguments,range(length(alt.arguments)-1)
                 sequence |> push <| into_rule_(sequence_elem)
 
             alternatives |> emplace <| [[Alternative
@@ -288,17 +316,50 @@ class ParseMacro : AstCallMacro
 
         var inscope gram: array<Definition>
 
+        var inscope gen <- [[ParserGenerator]]
+
         for mrule in rules_
             gram |> emplace(mrule |> transform)
 
+        if failed_to_transform
+            return <- [[ExpressionPtr]]
+
         // Generate
 
-        var inscope gen <- [[ParserGenerator]]
+        for mrule in rules_
+            for opt in mrule.options_
+                gen |> accept_option(opt) // Set the state of the generator up
 
         gen |> generate_grammar(gram, name)
 
+
+        var first_method_name = gram[0].name
+
         return <- qmacro_block <|
-            pass // Just return something non-zero
+            var inscope parser : $t(gen.parser_type)
+
+            if $v(gen.color_output)
+                parser.color_output = true
+
+            peek_data($i(name)) <| $ ( inp )
+                parser.input := inp
+
+            var result : $t(gen.return_types[gram[0].name])
+            result <- $c("parse_{gram[0].name}")(parser)
+
+
+            if !result.success // Create an error-reporting parser and emit errors
+                print("Error!\n")
+                parser.error_reporting = true
+                result <- $c("parse_{gram[0].name}")(parser)
+                sort_unique(parser.errors)
+                return <- result
+
+            print("No error!\n")
+            write_json(result.value) |> print()
+
+            print("{result}\n")
+            return result |> clone
 
 
 [_macro]
